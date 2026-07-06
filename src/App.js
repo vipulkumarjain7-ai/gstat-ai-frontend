@@ -1,4 +1,5 @@
 import{useState,useEffect,useCallback,useRef}from"react";
+
 const API=process.env.REACT_APP_API||"https://gstat-ai-backend.onrender.com/api";
 const api=async(path,method="GET",body=null,token=null)=>{
   const headers={"Content-Type":"application/json"};
@@ -38,7 +39,6 @@ const S={
   kpi:{background:"#f8fafc",border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",textAlign:"center"},
 };
 
-const today=()=>new Date().toISOString().split("T")[0];
 const fR=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
 const fD=d=>d?new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"—";
 
@@ -49,7 +49,7 @@ function Spinner(){return(<div style={{textAlign:"center",padding:40,color:C.mut
 </div>);}
 
 function Toast({msg,type,onClose}){
-  useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[]);
+  useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[onClose]);
   const bg=type==="error"?"#fff1f0":type==="success"?"#f0fdf4":"#fffbeb";
   const color=type==="error"?"#c53030":type==="success"?"#166534":"#92400e";
   return(<div style={{position:"fixed",bottom:20,right:20,maxWidth:380,padding:"12px 16px",
@@ -993,11 +993,27 @@ function LegalLibrary({token,toast,isAdmin}){
 function AppealManager({token,toast,go}){
   const[appeals,setAppeals]=useState([]);const[loading,setLoading]=useState(true);
   const[active,setActive]=useState(null);
-  const[cases,setCases]=useState([]);
+  const [, setCases] = useState([]);
 
-  const load=useCallback(()=>{setLoading(true);api("/appeals","GET",null,token).then(d=>{setAppeals(d.appeals||[]);setLoading(false);}).catch(()=>setLoading(false));},[token]);
-  useEffect(()=>{load();api("/cases","GET",null,token).then(d=>setCases(d.cases||[])).catch(()=>{});},[token]);
+  const load = useCallback(() => {
+  setLoading(true);
 
+  api("/appeals", "GET", null, token)
+    .then((d) => {
+      setAppeals(d.appeals || []);
+      setLoading(false);
+    })
+    .catch(() => setLoading(false));
+
+}, [token]);
+
+useEffect(() => {
+  load();
+
+  api("/cases", "GET", null, token)
+    .then((d) => setCases(d.cases || []))
+    .catch(() => {});
+}, [load, token]);
   const openAppeal=async id=>{try{const d=await api(`/appeals/${id}`,"GET",null,token);setActive(d.appeal);}catch(e){toast(e.message,"error");}};
   const del=async id=>{if(!window.confirm("Delete appeal?"))return;try{await api(`/appeals/${id}`,"DELETE",null,token);toast("Deleted","success");load();}catch(e){toast(e.message,"error");}};
 
