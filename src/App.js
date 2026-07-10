@@ -803,7 +803,7 @@ function CaseForm({token,toast,go,onSaved}){
 const REF_TYPES=[
   ["act_section","GST Act Section"],["rule","GST Rule"],["circular","CBIC Circular"],
   ["notification","Notification"],["gst_council","GST Council Recommendation"],
-  ["gstat_order","GSTAT Order"],["hc_order","High Court Order"],
+  ["gstat_order","GSTAT Procedure Rules","GSTAT Order"],["hc_order","High Court Order"],
   ["sc_order","Supreme Court Order"],["aar","AAR / AAAR Order"],["user_upload","Own Upload / Research"],
 ];
 const REF_COLORS={act_section:"blue",rule:"teal",circular:"purple",notification:"amber",
