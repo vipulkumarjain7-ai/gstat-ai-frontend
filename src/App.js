@@ -39,6 +39,7 @@ const S={
   kpi:{background:"#f8fafc",border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",textAlign:"center"},
 };
 
+const today=()=>new Date().toISOString().split("T")[0];
 const fR=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
 const fD=d=>d?new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"—";
 
@@ -49,7 +50,7 @@ function Spinner(){return(<div style={{textAlign:"center",padding:40,color:C.mut
 </div>);}
 
 function Toast({msg,type,onClose}){
-  useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[onClose]);
+  useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[]);
   const bg=type==="error"?"#fff1f0":type==="success"?"#f0fdf4":"#fffbeb";
   const color=type==="error"?"#c53030":type==="success"?"#166534":"#92400e";
   return(<div style={{position:"fixed",bottom:20,right:20,maxWidth:380,padding:"12px 16px",
@@ -143,8 +144,19 @@ function AuthScreen({onAuth}){
     if(!regName||!regEmail||!regPass||!regFirm||!regPhone)return setErr("All fields are mandatory");
     if(regPhone.length!==10)return setErr("Enter valid 10-digit mobile number");
     setErr("");setLoading(true);
-    try{const d=await api("/auth/register","POST",{name:regName,email:regEmail,password:regPass,firm_name:regFirm,phone:regPhone,role:regRole},null);finish(d);}
-    catch(e){setErr(e.message);}setLoading(false);
+    try{
+      const d=await api("/auth/register","POST",{name:regName,email:regEmail,password:regPass,firm_name:regFirm,phone:regPhone,role:regRole},null);
+      if(d.require_email_verify){
+        setVerifyToken(d.verify_token);setVerifyEmail(d.sent_to);
+        setTab("verify_email");setErr("");
+      } else {finish(d);}
+    }catch(e){setErr(e.message);}setLoading(false);
+  };
+  const doVerifyEmail=async()=>{
+    if(!verifyCode||verifyCode.length<6)return setErr("Enter 6-digit OTP");
+    setErr("");setVerifyLoading(true);
+    try{const d=await api("/auth/verify-email","POST",{verify_token:verifyToken,code:verifyCode},null);finish(d);}
+    catch(e){setErr(e.message);}setVerifyLoading(false);
   };
   const doSendPhoneOtp=async()=>{
     if(phone.length!==10)return setErr("Enter valid 10-digit mobile number");
@@ -158,7 +170,7 @@ function AuthScreen({onAuth}){
     try{const d=await api("/auth/phone-otp-verify","POST",{otp_token:otpToken,code:otpCode},null);finish(d);}
     catch(e){setErr(e.message);}setLoading(false);
   };
-  const sw=t=>{setTab(t);setErr("");setLoginMode("password");setPhoneStep("input");setOtpCode("");};
+  const sw=t=>{setTab(t);setErr("");setLoginMode("password");setPhoneStep("input");setOtpCode("");setVerifyCode("");};
 
   return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
     <div style={{background:C.green,padding:"0 24px",height:62,display:"flex",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
@@ -213,6 +225,20 @@ function AuthScreen({onAuth}){
             <GInput label="Enter OTP *" placeholder="000000" value={otpCode} onChange={setOtpCode} onEnter={doVerifyPhoneOtp} maxLength={6} autoFocus/>
             <GBtn onClick={doVerifyPhoneOtp} loading={loading}>Verify & Login →</GBtn>
             <button onClick={()=>{setPhoneStep("input");setErr("");}} style={{background:"none",border:"none",color:C.navy,fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Change number</button>
+          </div>)}
+          {tab==="verify_email"&&(<div>
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:16,marginBottom:16,textAlign:"center"}}>
+              <div style={{fontSize:28,marginBottom:6}}>📧</div>
+              <div style={{fontWeight:700,color:"#166534",marginBottom:4}}>Verify Your Email</div>
+              <div style={{fontSize:12,color:"#166534"}}>We sent a 6-digit OTP to:</div>
+              <div style={{fontWeight:700,color:"#0B6623",fontSize:13,marginTop:4}}>{verifyEmail}</div>
+            </div>
+            <GInput label="Enter OTP *" placeholder="000000" value={verifyCode}
+              onChange={v=>setVerifyCode(v.replace(/[^0-9]/g,"").slice(0,6))}
+              onEnter={doVerifyEmail} maxLength={6} autoFocus
+              hint="Check your inbox and spam folder. OTP valid for 30 minutes."/>
+            <GBtn onClick={doVerifyEmail} loading={verifyLoading}>✅ Verify Email & Login →</GBtn>
+            <button onClick={()=>{sw("register");setVerifyToken(null);}} style={{background:"none",border:"none",color:C.navy,fontSize:12,cursor:"pointer",marginTop:10,textDecoration:"underline",display:"block"}}>← Back to Register</button>
           </div>)}
           {tab==="register"&&(<div>
             <GInput label="Full Name *" placeholder="CA Rajesh Sharma" value={regName} onChange={setRegName}/>
@@ -397,72 +423,161 @@ function GSTATDashboard({token,toast,go}){
   useEffect(()=>{api("/dashboard","GET",null,token).then(d=>{setStats(d);setLoading(false);}).catch(()=>setLoading(false));},[token]);
   if(loading)return<Spinner/>;
   const s=stats?.stats||{};
-  return(<div>
-    <div style={{...S.card,background:"linear-gradient(135deg,#0B6623 0%,#1a2b4e 100%)",border:"none",marginBottom:16}}>
-      <div style={{color:"#fff",fontWeight:700,fontSize:16,marginBottom:4}}>⚖️ Welcome to GSTAT AI</div>
-      <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>AI-Powered GST Litigation & Appeal Drafting — grounded in your Legal Library only</div>
+
+  const StatCard=({icon,label,value,color,onClick,sub})=>(
+    <div onClick={onClick} style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,
+      padding:"18px 20px",cursor:onClick?"pointer":"default",
+      borderLeft:`4px solid ${color||C.green}`,
+      boxShadow:"0 1px 4px rgba(0,0,0,0.05)",transition:"box-shadow 0.2s",
+      display:"flex",flexDirection:"column",gap:4}}
+      onMouseEnter={e=>onClick&&(e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.1)")}
+      onMouseLeave={e=>onClick&&(e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.05)")}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div style={{fontSize:28}}>{icon}</div>
+        {onClick&&<span style={{fontSize:11,color:C.muted}}>View →</span>}
+      </div>
+      <div style={{fontSize:30,fontWeight:900,color:color||C.navy,lineHeight:1}}>{value??0}</div>
+      <div style={{fontSize:12,color:C.sub,fontWeight:600}}>{label}</div>
+      {sub&&<div style={{fontSize:10,color:C.muted}}>{sub}</div>}
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,marginBottom:16}}>
-      {[
-        ["👥","Clients",s.total_clients,null,"clients"],
-        ["📋","Total Cases",s.total_cases,null,"cases"],
-        ["🔓","Open Cases",s.open_cases,null,"cases"],
-        ["🚨","Critical",s.critical_deadline_cases,"red","cases"],
-        ["✅","Filed",s.filed_cases,"green","cases"],
-        ["💰","Total Demand",fR(s.total_demand),null,null],
-      ].map(([icon,label,val,color,key])=>(
-        <div key={label} onClick={()=>key&&go(key)} style={{...S.kpi,cursor:key?"pointer":"default",
-          borderTop:`3px solid ${color==="red"?"#f85149":color==="green"?"#0B6623":C.green}`}}>
-          <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
-          <div style={{fontSize:18,fontWeight:800,color:color==="red"?"#c53030":color==="green"?"#0B6623":C.navy}}>{val??0}</div>
-          <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{label}</div>
+  );
+
+  const deadline_cases = stats?.recent_cases?.filter(c=>["overdue","critical"].includes(c.deadline_status))||[];
+
+  return(<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* Welcome banner */}
+    <div style={{background:"linear-gradient(135deg,#0B6623 0%,#1a2b4e 100%)",borderRadius:10,padding:"20px 28px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div>
+        <div style={{color:"#fff",fontWeight:800,fontSize:20,marginBottom:4}}>⚖️ GSTAT AI Dashboard</div>
+        <div style={{color:"rgba(255,255,255,0.75)",fontSize:12}}>AI-Powered GST Litigation Platform · Grounded in your Legal Library</div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>go("cases-new")} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"#fff",borderRadius:7,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ New Case</button>
+        <button onClick={()=>go("appeals")} style={{background:"#fff",border:"none",color:"#0B6623",borderRadius:7,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>⚖️ Draft Appeal</button>
+      </div>
+    </div>
+
+    {/* KPI Grid */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12}}>
+      <StatCard icon="👥" label="Total Clients" value={s.total_clients} color="#1a2b4e" onClick={()=>go("clients")}/>
+      <StatCard icon="📋" label="Total Cases" value={s.total_cases} color="#0B6623" onClick={()=>go("cases")}/>
+      <StatCard icon="🔓" label="Open Cases" value={s.open_cases} color="#2563eb" onClick={()=>go("cases")}/>
+      <StatCard icon="🚨" label="Critical" value={s.critical_deadline_cases} color="#dc2626" onClick={()=>go("cases")} sub="Deadline < 7 days"/>
+      <StatCard icon="✅" label="Filed" value={s.filed_cases} color="#16a34a" onClick={()=>go("cases")}/>
+      <StatCard icon="💰" label="Total Demand" value={fR(s.total_demand)} color="#9333ea" sub="Across all cases"/>
+    </div>
+
+    {/* Critical alerts */}
+    {s.critical_deadline_cases>0&&(
+      <div style={{background:"#fff1f0",border:"1px solid #fca5a5",borderRadius:8,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>🚨</span>
+        <div>
+          <div style={{fontWeight:700,color:"#c53030",fontSize:13}}>{s.critical_deadline_cases} case(s) with critical deadlines!</div>
+          <div style={{fontSize:11,color:"#c53030",opacity:0.8}}>Limitation date within 7 days — file immediately</div>
         </div>
-      ))}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-      <div style={S.card}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:10,fontSize:13}}>📋 Recent Cases</div>
-        {stats?.recent_cases?.length>0?stats.recent_cases.map(c=>(
-          <div key={c.id} onClick={()=>go("cases")} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
-            <div><div style={{fontSize:12,fontWeight:600,color:C.navy}}>{c.client_name}</div>
-              <div style={{fontSize:10,color:C.muted}}>{c.case_number}</div></div>
-            <div style={{textAlign:"right"}}>{badge((STATUS_CONFIG[c.status]?.label)||c.status,STATUS_CONFIG[c.status]?.color)}
-              <div style={{fontSize:10,color:C.muted,marginTop:2}}>{fR(c.demand_total)}</div>
+        <button onClick={()=>go("cases")} style={{marginLeft:"auto",background:"#c53030",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>View Cases</button>
+      </div>
+    )}
+
+    {/* Main content grid */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      {/* Recent Cases */}
+      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:14}}>📋 Recent Cases</div>
+          <button onClick={()=>go("cases")} style={{background:"none",border:"none",color:C.green,cursor:"pointer",fontSize:11,fontWeight:700}}>View All →</button>
+        </div>
+        <div style={{padding:"0 4px"}}>
+          {stats?.recent_cases?.length>0?stats.recent_cases.map(c=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}
+              onClick={()=>go("cases")}>
+              <div style={{width:6,height:6,borderRadius:"50%",background:
+                c.deadline_status==="overdue"||c.deadline_status==="critical"?"#dc2626":
+                c.deadline_status==="warning"?"#d97706":"#16a34a",flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:12,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client_name}</div>
+                <div style={{fontSize:10,color:C.muted}}>{c.case_number}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                {badge(STATUS_CONFIG[c.status]?.label||c.status,STATUS_CONFIG[c.status]?.color||"gray")}
+                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{fR(c.demand_total)}</div>
+              </div>
             </div>
-          </div>
-        )):<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:20}}>No cases yet. <span onClick={()=>go("cases-new")} style={{color:C.green,cursor:"pointer",textDecoration:"underline"}}>Create first case</span></div>}
+          )):<div style={{padding:30,textAlign:"center",color:C.muted,fontSize:12}}>
+            No cases yet.<br/>
+            <span onClick={()=>go("cases-new")} style={{color:C.green,cursor:"pointer",textDecoration:"underline"}}>Create your first case</span>
+          </div>}
+        </div>
       </div>
-      <div style={S.card}>
-        <div style={{fontWeight:700,color:C.text,marginBottom:10,fontSize:13}}>📅 Upcoming Hearings</div>
-        {stats?.upcoming_hearings?.length>0?stats.upcoming_hearings.map((h,i)=>(
-          <div key={i} style={{padding:"6px 0",borderBottom:`1px solid ${C.border}`}}>
-            <div style={{fontSize:12,fontWeight:600,color:C.navy}}>{h.client_name}</div>
-            <div style={{fontSize:11,color:C.muted}}>{h.case_number} · {fD(h.hearing_date)}</div>
-            <div style={{fontSize:10,color:C.sub}}>{h.forum||"Court"}</div>
-          </div>
-        )):<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:20}}>No upcoming hearings</div>}
+
+      {/* Upcoming Hearings */}
+      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontWeight:700,color:C.text,fontSize:14}}>📅 Upcoming Hearings</div>
+          <button onClick={()=>go("cases")} style={{background:"none",border:"none",color:C.green,cursor:"pointer",fontSize:11,fontWeight:700}}>All Cases →</button>
+        </div>
+        <div style={{padding:"0 4px"}}>
+          {stats?.upcoming_hearings?.length>0?stats.upcoming_hearings.map((h,i)=>(
+            <div key={i} style={{display:"flex",gap:12,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:48,flexShrink:0}}>
+                <div style={{fontSize:16,fontWeight:900,color:"#0B6623",lineHeight:1}}>{new Date(h.hearing_date).getDate()}</div>
+                <div style={{fontSize:9,color:"#0B6623",fontWeight:700}}>{new Date(h.hearing_date).toLocaleDateString("en-IN",{month:"short"})}</div>
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:12,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.client_name}</div>
+                <div style={{fontSize:10,color:C.muted}}>{h.case_number}</div>
+                <div style={{fontSize:10,color:C.sub}}>{h.forum||"Court"}</div>
+              </div>
+            </div>
+          )):<div style={{padding:30,textAlign:"center",color:C.muted,fontSize:12}}>No upcoming hearings scheduled</div>}
+        </div>
       </div>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginTop:12}}>
-      {[["👥","Clients","Manage client master, GSTINs, contacts","clients"],
-        ["📋","Cases","Track appeals, hearings, deadlines","cases"],
-        ["📚","Legal Library","Upload Act sections, Rules, Circulars, Court orders","library"],
-        ["⚖️","Draft Appeal","AI drafts appeal citing your library only","appeals"],
-        ["🔍","AI Research","Search your library by section, case, keyword","research"],
-        ["💬","AI Chat","Ask legal questions — answered from your library","chat"],
-      ].map(([icon,title,desc,key])=>(
-        <div key={key} onClick={()=>go(key)}
-          style={{...S.card,cursor:"pointer",borderLeft:`3px solid ${C.green}`,background:"#fff"}}
-          onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(11,102,35,0.15)"}
-          onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)"}>
-          <div style={{fontSize:26,marginBottom:6}}>{icon}</div>
-          <div style={{fontWeight:700,color:C.text,marginBottom:3,fontSize:13}}>{title}</div>
-          <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>{desc}</div>
+
+    {/* Quick Actions + Library status */}
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16}}>
+      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:14}}>⚡ Quick Actions</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          {[["👥","New Client","clients"],["📋","New Case","cases-new"],["⚖️","Draft Appeal","appeals"],
+            ["📚","Legal Library","library"],["🔍","AI Research","research"],["💬","AI Chat","chat"]
+          ].map(([icon,label,key])=>(
+            <div key={key} onClick={()=>go(key)}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"14px 10px",
+                background:"#f8fafc",borderRadius:8,cursor:"pointer",border:`1px solid ${C.border}`,
+                transition:"all 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.background="#f0fdf4";e.currentTarget.style.borderColor="#0B6623";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.borderColor=C.border;}}>
+              <span style={{fontSize:22}}>{icon}</span>
+              <span style={{fontSize:11,fontWeight:600,color:C.text,textAlign:"center"}}>{label}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
+
+      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:14}}>📚 Library Status</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:s.total_legal_refs>0?"#f0fdf4":"#fff1f0",borderRadius:8,border:`1px solid ${s.total_legal_refs>0?"#86efac":"#fca5a5"}`}}>
+            <span style={{fontSize:12,color:s.total_legal_refs>0?"#166534":"#c53030",fontWeight:600}}>
+              {s.total_legal_refs>0?"✅ Library Active":"⚠ Library Empty"}
+            </span>
+            <span style={{fontWeight:900,fontSize:20,color:s.total_legal_refs>0?"#0B6623":"#dc2626"}}>{s.total_legal_refs||0}</span>
+          </div>
+          <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
+            {s.total_legal_refs>0
+              ?`${s.total_legal_refs} references uploaded. AI will cite from these when generating appeal drafts and research memos.`
+              :"Legal Library is empty. AI cannot cite any references. Upload GST Act sections, Rules, Circulars and Court orders first."}
+          </div>
+          <button onClick={()=>go("library")} style={{...S.btn,fontSize:11,padding:"8px"}}>
+            {s.total_legal_refs>0?"View Library →":"+ Upload References →"}
+          </button>
+        </div>
+      </div>
     </div>
   </div>);
 }
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CLIENT MANAGER
@@ -803,7 +918,7 @@ function CaseForm({token,toast,go,onSaved}){
 const REF_TYPES=[
   ["act_section","GST Act Section"],["rule","GST Rule"],["circular","CBIC Circular"],
   ["notification","Notification"],["gst_council","GST Council Recommendation"],
-  ["gstat_order","GSTAT Procedure Rules","GSTAT Order"],["hc_order","High Court Order"],
+  ["gstat_order","GSTAT Order"],["hc_order","High Court Order"],
   ["sc_order","Supreme Court Order"],["aar","AAR / AAAR Order"],["user_upload","Own Upload / Research"],
 ];
 const REF_COLORS={act_section:"blue",rule:"teal",circular:"purple",notification:"amber",
@@ -993,27 +1108,11 @@ function LegalLibrary({token,toast,isAdmin}){
 function AppealManager({token,toast,go}){
   const[appeals,setAppeals]=useState([]);const[loading,setLoading]=useState(true);
   const[active,setActive]=useState(null);
-  const [, setCases] = useState([]);
+  const[cases,setCases]=useState([]);
 
-  const load = useCallback(() => {
-  setLoading(true);
+  const load=useCallback(()=>{setLoading(true);api("/appeals","GET",null,token).then(d=>{setAppeals(d.appeals||[]);setLoading(false);}).catch(()=>setLoading(false));},[token]);
+  useEffect(()=>{load();api("/cases","GET",null,token).then(d=>setCases(d.cases||[])).catch(()=>{});},[token]);
 
-  api("/appeals", "GET", null, token)
-    .then((d) => {
-      setAppeals(d.appeals || []);
-      setLoading(false);
-    })
-    .catch(() => setLoading(false));
-
-}, [token]);
-
-useEffect(() => {
-  load();
-
-  api("/cases", "GET", null, token)
-    .then((d) => setCases(d.cases || []))
-    .catch(() => {});
-}, [load, token]);
   const openAppeal=async id=>{try{const d=await api(`/appeals/${id}`,"GET",null,token);setActive(d.appeal);}catch(e){toast(e.message,"error");}};
   const del=async id=>{if(!window.confirm("Delete appeal?"))return;try{await api(`/appeals/${id}`,"DELETE",null,token);toast("Deleted","success");load();}catch(e){toast(e.message,"error");}};
 
@@ -1446,6 +1545,12 @@ function UserSettings({token,user,toast,onLogout,isAdmin}){
   const[f,setF]=useState({name:user?.name||"",firm_name:user?.firm_name||"",phone:user?.phone||""});
   const[cp,setCp]=useState({current:"",new_pass:"",confirm:""});
   const[saving,setSaving]=useState(false);const[adminKey,setAdminKey]=useState("");
+  const[lang,setLang]=useState("english");
+  useEffect(()=>{api("/auth/profile","GET",null,token).then(d=>setLang(d.user?.language||"english")).catch(()=>{});},[token]);
+  const saveLang=async(l)=>{
+    try{await api("/auth/language","PUT",{language:l},token);setLang(l);toast(`✅ Language set to ${l.charAt(0).toUpperCase()+l.slice(1)}`,"success");}
+    catch(e){toast(e.message,"error");}
+  };
   const saveProfile=async()=>{setSaving(true);try{await api("/auth/profile","PUT",f,token);toast("✅ Profile updated","success");}catch(e){toast(e.message,"error");}setSaving(false);};
   const changePass=async()=>{
     if(!cp.current||!cp.new_pass)return toast("Fill all fields","error");
@@ -1491,6 +1596,26 @@ function UserSettings({token,user,toast,onLogout,isAdmin}){
         <button onClick={claimAdmin} style={S.btn}>Claim Admin</button>
       </div>
     </div>)}
+    <div style={S.card}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>🌐 Language Settings</div>
+      <div style={{fontSize:12,color:C.muted,marginBottom:12}}>AI replies (Appeal Draft, Research, Chat) will be generated in your selected language.</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {[["english","🇬🇧 English","AI responds in formal English"],
+          ["hindi","🇮🇳 Hindi","AI responds in Hindi (Devanagari)"],
+          ["hinglish","🔀 Hinglish","Hindi explanation + English citations"]
+        ].map(([val,label,desc])=>(
+          <div key={val} onClick={()=>saveLang(val)}
+            style={{flex:1,minWidth:140,padding:12,borderRadius:8,cursor:"pointer",
+              border:`2px solid ${lang===val?"#0B6623":C.border}`,
+              background:lang===val?"#f0fdf4":"#fff",textAlign:"center"}}>
+            <div style={{fontSize:18,marginBottom:4}}>{label.split(" ")[0]}</div>
+            <div style={{fontWeight:700,fontSize:12,color:lang===val?"#0B6623":C.text}}>{label.split(" ")[1]}</div>
+            <div style={{fontSize:10,color:C.muted,marginTop:2}}>{desc}</div>
+            {lang===val&&<div style={{fontSize:10,color:"#0B6623",marginTop:4,fontWeight:700}}>✅ Active</div>}
+          </div>
+        ))}
+      </div>
+    </div>
     <div style={S.card}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>ℹ️ Account Info</div>
       <div style={{fontSize:12,color:C.sub,lineHeight:2}}>
