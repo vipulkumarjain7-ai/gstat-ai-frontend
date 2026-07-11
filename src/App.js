@@ -119,6 +119,10 @@ function AuthScreen({onAuth}){
   const[regName,setRegName]=useState("");const[regFirm,setRegFirm]=useState("");
   const[regEmail,setRegEmail]=useState("");const[regPhone,setRegPhone]=useState("");
   const[regPass,setRegPass]=useState("");const[regRole,setRegRole]=useState("ca");
+  const[verifyToken,setVerifyToken]=useState(null);
+  const[verifyEmail,setVerifyEmail]=useState("");
+  const[verifyCode,setVerifyCode]=useState("");
+  const[verifyLoading,setVerifyLoading]=useState(false);
   const[phone,setPhone]=useState("");const[otpCode,setOtpCode]=useState("");
   const[otpToken,setOtpToken]=useState(null);const[otpSentTo,setOtpSentTo]=useState("");
   const[loading,setLoading]=useState(false);const[warming,setWarming]=useState(true);const[err,setErr]=useState("");
