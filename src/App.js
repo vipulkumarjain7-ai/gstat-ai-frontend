@@ -1,4 +1,4 @@
-import{useState,useEffect,useCallback,useRef}from"react";
+import{useState,useEffect,useCallback,useRef,useMemo}from"react";
 
 const API=process.env.REACT_APP_API||"https://gstat-ai-backend.onrender.com/api";
 const api=async(path,method="GET",body=null,token=null)=>{
@@ -10,125 +10,97 @@ const api=async(path,method="GET",body=null,token=null)=>{
   return d;
 };
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C={bg:"#f5f6fa",card:"#ffffff",border:"#e2e8f0",text:"#1a2b4e",
-  sub:"#4a5568",muted:"#94a3b8",green:"#0B6623",navy:"#1a2b4e"};
-const S={
-  card:{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"},
-  input:{width:"100%",padding:"10px 14px",background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:6,
-    fontSize:13,color:C.text,outline:"none",boxSizing:"border-box",fontFamily:"inherit"},
-  select:{width:"100%",padding:"9px 12px",background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:6,
-    fontSize:13,color:C.text,fontFamily:"inherit"},
-  btn:{padding:"9px 18px",background:C.green,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",
-    fontSize:13,fontWeight:600,fontFamily:"inherit"},
-  btnO:{padding:"9px 18px",background:"transparent",color:C.navy,border:`1.5px solid ${C.border}`,
-    borderRadius:6,cursor:"pointer",fontSize:13,fontFamily:"inherit"},
-  btnR:{padding:"7px 14px",background:"#fff1f0",color:"#c53030",border:"1px solid #feb2b2",
-    borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"},
-  btnNav:{padding:"8px 16px",background:"transparent",border:"none",cursor:"pointer",
-    fontSize:12,fontFamily:"inherit"},
-  th:{padding:"9px 12px",background:"#f8fafc",borderBottom:`1.5px solid ${C.border}`,
-    textAlign:"left",fontSize:11,fontWeight:700,color:C.sub,whiteSpace:"nowrap"},
-  td:{padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.text,verticalAlign:"middle"},
-  tdR:{padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.text,textAlign:"right"},
-  tbl:{width:"100%",borderCollapse:"collapse"},
-  label:{display:"block",fontSize:11,fontWeight:600,color:C.sub,marginBottom:4},
-  fg:{marginBottom:12},
-  col2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:0},
-  col3:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:0},
-  kpi:{background:"#f8fafc",border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",textAlign:"center"},
+// ── Design tokens — support light/dark/green themes ──────────────────────────
+const THEMES={
+  light:{bg:"#f5f6fa",card:"#ffffff",border:"#e2e8f0",text:"#1a2b4e",sub:"#4a5568",muted:"#94a3b8",green:"#0B6623",navy:"#1a2b4e",inputBg:"#fff",navBg:"#1a2b4e",headerBg:"#0B6623",shadow:"0 1px 4px rgba(0,0,0,0.06)"},
+  dark:{bg:"#0d1117",card:"#161b22",border:"#30363d",text:"#e6edf3",sub:"#8b949e",muted:"#484f58",green:"#3fb950",navy:"#1f2937",inputBg:"#21262d",navBg:"#161b22",headerBg:"#0B6623",shadow:"0 1px 4px rgba(0,0,0,0.4)"},
+  green:{bg:"#f0fdf4",card:"#ffffff",border:"#86efac",text:"#14532d",sub:"#166534",muted:"#4ade80",green:"#0B6623",navy:"#14532d",inputBg:"#fff",navBg:"#14532d",headerBg:"#0B6623",shadow:"0 1px 4px rgba(11,102,35,0.1)"},
 };
+
+let _theme="light";
+const getC=()=>THEMES[_theme]||THEMES.light;
 
 const today=()=>new Date().toISOString().split("T")[0];
 const fR=n=>`₹${Number(n||0).toLocaleString("en-IN")}`;
 const fD=d=>d?new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"—";
-
-function Spinner(){return(<div style={{textAlign:"center",padding:40,color:C.muted}}>
-  <div style={{display:"inline-block",width:32,height:32,border:`3px solid ${C.border}`,
-    borderTopColor:C.green,borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-  <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
-</div>);}
-
-function Toast({msg,type,onClose}){
-  useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[]);
-  const bg=type==="error"?"#fff1f0":type==="success"?"#f0fdf4":"#fffbeb";
-  const color=type==="error"?"#c53030":type==="success"?"#166534":"#92400e";
-  return(<div style={{position:"fixed",bottom:20,right:20,maxWidth:380,padding:"12px 16px",
-    borderRadius:8,boxShadow:"0 4px 16px rgba(0,0,0,0.15)",background:bg,color,fontSize:13,
-    zIndex:999,display:"flex",alignItems:"flex-start",gap:10}}>
-    <span style={{flex:1}}>{msg}</span>
-    <button onClick={onClose} style={{background:"none",border:"none",color,cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>
-  </div>);}
-
-function Modal({title,onClose,children,wide}){
-  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}}>
-    <div style={{background:C.card,borderRadius:10,width:"100%",maxWidth:wide?760:500,boxShadow:"0 8px 32px rgba(0,0,0,0.15)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1px solid ${C.border}`}}>
-        <div style={{fontWeight:700,fontSize:15,color:C.text}}>{title}</div>
-        <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button>
-      </div>
-      <div style={{padding:20}}>{children}</div>
-    </div>
-  </div>);}
-
-function badge(text,color="blue"){
-  const map={green:["#f0fdf4","#166534","#86efac"],red:["#fff1f0","#c53030","#feb2b2"],
-    amber:["#fffbeb","#92400e","#fcd34d"],blue:["#eff6ff","#1d4ed8","#bfdbfe"],
-    purple:["#faf5ff","#6b21a8","#d8b4fe"],gray:["#f8fafc","#475569","#cbd5e1"],
-    teal:["#f0fdfa","#0f766e","#5eead4"]};
-  const[bg,fg,border]=map[color]||map.blue;
-  return<span style={{background:bg,color:fg,border:`1px solid ${border}`,borderRadius:20,padding:"2px 10px",fontSize:10,fontWeight:600,whiteSpace:"nowrap"}}>{text}</span>;
-}
-
-const STATUS_CONFIG={
-  new:{label:"New",color:"gray"},
-  documents_uploaded:{label:"Docs Uploaded",color:"blue"},
-  research_done:{label:"Researched",color:"purple"},
-  draft_generated:{label:"Draft Ready",color:"teal"},
-  under_review:{label:"Under Review",color:"amber"},
-  filed:{label:"Filed",color:"green"},
-  decided:{label:"Decided",color:"green"},
-  closed:{label:"Closed",color:"gray"},
-};
+const REF_TYPES=[["act_section","GST Act Section"],["rule","GST Rule"],["circular","CBIC Circular"],["notification","Notification"],["gst_council","GST Council Rec."],["gstat_order","GSTAT Order"],["hc_order","High Court Order"],["sc_order","Supreme Court Order"],["aar","AAR / AAAR Order"],["user_upload","Own Upload"]];
+const REF_COLORS={act_section:"blue",rule:"teal",circular:"purple",notification:"amber",gst_council:"green",gstat_order:"teal",hc_order:"blue",sc_order:"green",aar:"gray",user_upload:"gray"};
+const STATUS_CONFIG={new:{label:"New",color:"gray"},documents_uploaded:{label:"Docs Uploaded",color:"blue"},research_done:{label:"Researched",color:"purple"},draft_generated:{label:"Draft Ready",color:"teal"},under_review:{label:"Under Review",color:"amber"},filed:{label:"Filed",color:"green"},decided:{label:"Decided",color:"green"},closed:{label:"Closed",color:"gray"}};
 const PRIORITY_CONFIG={high:{label:"High",color:"red"},medium:{label:"Medium",color:"amber"},low:{label:"Low",color:"blue"}};
 const DEADLINE_CONFIG={overdue:{label:"OVERDUE",color:"red"},critical:{label:"< 7 Days",color:"red"},warning:{label:"< 30 Days",color:"amber"},ok:{label:"OK",color:"green"}};
+const APPEAL_FORUMS=["GST Appellate Tribunal (GSTAT)","Commissioner (Appeals)","Additional Commissioner (Appeals)","High Court","Supreme Court"];
+const ORDER_TYPES=["Order-in-Original (OIO)","Show Cause Notice (SCN)","DRC-07 (Summary Demand)","ASMT-13 (Best Judgement)","ADT-04 (Audit Report)","REG-19 (Cancellation)","Other"];
 
-// ── Auth Screen helpers (module-level to prevent re-mount) ────────────────────
-const GInput=({type="text",label,placeholder,value,onChange,onEnter,maxLength,autoFocus,disabled,hint})=>(
-  <div style={S.fg}>
-    {label&&<label style={S.label}>{label}</label>}
-    <input type={type} placeholder={placeholder} value={value} autoFocus={autoFocus} disabled={disabled}
-      onChange={e=>onChange(e.target.value)} maxLength={maxLength}
-      onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()}
-      style={{...S.input,background:disabled?"#f8fafc":"#fff"}}/>
-    {hint&&<div style={{fontSize:11,color:C.muted,marginTop:3}}>{hint}</div>}
-  </div>
-);
-const GBtn=({onClick,children,disabled,loading,variant="primary",style:extraStyle={}})=>(
-  <button onClick={onClick} disabled={disabled||loading}
-    style={{...variant==="primary"?S.btn:S.btnO,width:"100%",padding:12,opacity:disabled||loading?0.6:1,...extraStyle}}>
-    {loading?"Please wait…":children}
-  </button>
-);
+// Dynamic styles based on theme
+const getS=()=>{
+  const C=getC();
+  return{
+    card:{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:16,marginBottom:12,boxShadow:C.shadow},
+    input:{width:"100%",padding:"10px 14px",background:C.inputBg,border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:13,color:C.text,outline:"none",boxSizing:"border-box",fontFamily:"inherit"},
+    select:{width:"100%",padding:"9px 12px",background:C.inputBg,border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:13,color:C.text,fontFamily:"inherit"},
+    btn:{padding:"9px 18px",background:C.green,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"inherit"},
+    btnO:{padding:"9px 18px",background:"transparent",color:C.navy,border:`1.5px solid ${C.border}`,borderRadius:6,cursor:"pointer",fontSize:13,fontFamily:"inherit"},
+    btnR:{padding:"7px 14px",background:"#fff1f0",color:"#c53030",border:"1px solid #feb2b2",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"},
+    th:{padding:"9px 12px",background:C.bg,borderBottom:`1.5px solid ${C.border}`,textAlign:"left",fontSize:11,fontWeight:700,color:C.sub,whiteSpace:"nowrap"},
+    td:{padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.text,verticalAlign:"middle"},
+    tdR:{padding:"9px 12px",borderBottom:`1px solid ${C.border}`,fontSize:12,color:C.text,textAlign:"right"},
+    tbl:{width:"100%",borderCollapse:"collapse"},
+    label:{display:"block",fontSize:11,fontWeight:600,color:C.sub,marginBottom:4},
+    fg:{marginBottom:12},
+    col2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12},
+    col3:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12},
+    kpi:{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",textAlign:"center"},
+  };
+};
 
+function Spinner(){const C=getC();return(<div style={{textAlign:"center",padding:40,color:C.muted}}><div style={{display:"inline-block",width:32,height:32,border:`3px solid ${C.border}`,borderTopColor:C.green,borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/><style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style></div>);}
+function Toast({msg,type,onClose}){useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[]);const bg=type==="error"?"#fff1f0":type==="success"?"#f0fdf4":"#fffbeb";const color=type==="error"?"#c53030":type==="success"?"#166534":"#92400e";return(<div style={{position:"fixed",bottom:20,right:20,maxWidth:380,padding:"12px 16px",borderRadius:8,boxShadow:"0 4px 16px rgba(0,0,0,0.15)",background:bg,color,fontSize:13,zIndex:999,display:"flex",alignItems:"flex-start",gap:10}}><span style={{flex:1}}>{msg}</span><button onClick={onClose} style={{background:"none",border:"none",color,cursor:"pointer",fontSize:16}}>✕</button></div>);}
+function Modal({title,onClose,children,wide}){const C=getC();return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}}><div style={{background:C.card,borderRadius:10,width:"100%",maxWidth:wide?780:500,boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1px solid ${C.border}`}}><div style={{fontWeight:700,fontSize:15,color:C.text}}>{title}</div><button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div><div style={{padding:20}}>{children}</div></div></div>);}
+
+function badge(text,color="blue"){const map={green:["#f0fdf4","#166534","#86efac"],red:["#fff1f0","#c53030","#feb2b2"],amber:["#fffbeb","#92400e","#fcd34d"],blue:["#eff6ff","#1d4ed8","#bfdbfe"],purple:["#faf5ff","#6b21a8","#d8b4fe"],gray:["#f8fafc","#475569","#cbd5e1"],teal:["#f0fdfa","#0f766e","#5eead4"]};const[bg,fg,border]=map[color]||map.blue;return<span style={{background:bg,color:fg,border:`1px solid ${border}`,borderRadius:20,padding:"2px 10px",fontSize:10,fontWeight:600,whiteSpace:"nowrap"}}>{text}</span>;}
+
+// ── Auth helpers at module level ──────────────────────────────────────────────
+const GInput=({type="text",label,placeholder,value,onChange,onEnter,maxLength,autoFocus,disabled,hint})=>{const C=getC();const S=getS();return(<div style={S.fg}>{label&&<label style={S.label}>{label}</label>}<input type={type} placeholder={placeholder} value={value} autoFocus={autoFocus} disabled={disabled} onChange={e=>onChange(e.target.value)} maxLength={maxLength} onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()} style={{...S.input,background:disabled?C.bg:C.inputBg}}/>{hint&&<div style={{fontSize:11,color:C.muted,marginTop:3}}>{hint}</div>}</div>);};
+const GBtn=({onClick,children,disabled,loading,variant="primary",full=true,style:ex={}})=>{const C=getC();const S=getS();return(<button onClick={onClick} disabled={disabled||loading} style={{...(variant==="primary"?S.btn:S.btnO),width:full?"100%":"auto",padding:12,opacity:disabled||loading?0.6:1,...ex}}>{loading?"Please wait…":children}</button>);};
+
+
+// ── AuthScreen ────────────────────────────────────────────────────────────────
 function AuthScreen({onAuth}){
+  const C=getC();const S=getS();
   const[tab,setTab]=useState("login");
   const[loginMode,setLoginMode]=useState("password");
   const[phoneStep,setPhoneStep]=useState("input");
-  const[email,setEmail]=useState("");const[password,setPassword]=useState("");
-  const[regName,setRegName]=useState("");const[regFirm,setRegFirm]=useState("");
-  const[regEmail,setRegEmail]=useState("");const[regPhone,setRegPhone]=useState("");
-  const[regPass,setRegPass]=useState("");const[regRole,setRegRole]=useState("ca");
+  const[email,setEmail]=useState("");
+  const[password,setPassword]=useState("");
+  const[regName,setRegName]=useState("");
+  const[regFirm,setRegFirm]=useState("");
+  const[regEmail,setRegEmail]=useState("");
+  const[regPhone,setRegPhone]=useState("");
+  const[regPass,setRegPass]=useState("");
+  const[regRole,setRegRole]=useState("advocate");
   const[verifyToken,setVerifyToken]=useState(null);
   const[verifyEmail,setVerifyEmail]=useState("");
   const[verifyCode,setVerifyCode]=useState("");
   const[verifyLoading,setVerifyLoading]=useState(false);
-  const[phone,setPhone]=useState("");const[otpCode,setOtpCode]=useState("");
-  const[otpToken,setOtpToken]=useState(null);const[otpSentTo,setOtpSentTo]=useState("");
-  const[loading,setLoading]=useState(false);const[warming,setWarming]=useState(true);const[err,setErr]=useState("");
+  const[phone,setPhone]=useState("");
+  const[otpCode,setOtpCode]=useState("");
+  const[otpToken,setOtpToken]=useState(null);
+  const[otpSentTo,setOtpSentTo]=useState("");
+  const[loading,setLoading]=useState(false);
+  const[serverStatus,setServerStatus]=useState("checking"); // checking | awake | slow
+  const[err,setErr]=useState("");
 
-  useEffect(()=>{fetch(`${API.replace("/api","")}/health`).then(()=>setWarming(false)).catch(()=>setWarming(false));},[]);
+  // Server warm-up with status feedback
+  useEffect(()=>{
+    const t=setTimeout(()=>setServerStatus("slow"),8000);
+    fetch(`${API.replace("/api","")}/health`)
+      .then(()=>{clearTimeout(t);setServerStatus("awake");})
+      .catch(()=>{clearTimeout(t);setServerStatus("awake");});
+    return()=>clearTimeout(t);
+  },[]);
+
   const finish=d=>{localStorage.setItem("gs_token",d.token);localStorage.setItem("gs_user",JSON.stringify(d.user));onAuth(d.user,d.token);};
+  const sw=t=>{setTab(t);setErr("");setLoginMode("password");setPhoneStep("input");setOtpCode("");setVerifyCode("");};
 
   const doLogin=async()=>{
     if(!email||!password)return setErr("Email and password required");
@@ -138,129 +110,142 @@ function AuthScreen({onAuth}){
       else finish(d);}catch(e){setErr(e.message);}
     setLoading(false);
   };
+
   const doVerifyOtp=async()=>{
     if(!otpCode||otpCode.length<6)return setErr("Enter 6-digit OTP");
     setErr("");setLoading(true);
     try{const d=await api("/auth/verify-otp","POST",{otp_token:otpToken,code:otpCode},null);finish(d);}
     catch(e){setErr(e.message);}setLoading(false);
   };
+
   const doRegister=async()=>{
     if(!regName||!regEmail||!regPass||!regFirm||!regPhone)return setErr("All fields are mandatory");
-    if(regPhone.length!==10)return setErr("Enter valid 10-digit mobile number");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail))return setErr("Enter a valid email address");
+    if(regPhone.replace(/\D/g,"").length!==10)return setErr("Enter valid 10-digit mobile number");
+    if(regPass.length<8)return setErr("Password must be at least 8 characters");
     setErr("");setLoading(true);
     try{
-      const d=await api("/auth/register","POST",{name:regName,email:regEmail,password:regPass,firm_name:regFirm,phone:regPhone,role:regRole},null);
+      const d=await api("/auth/register","POST",{name:regName,email:regEmail,password:regPass,firm_name:regFirm,phone:regPhone.replace(/\D/g,""),role:regRole},null);
       if(d.require_email_verify){
         setVerifyToken(d.verify_token);setVerifyEmail(d.sent_to);
         setTab("verify_email");setErr("");
-      } else {finish(d);}
+      }else{finish(d);}
     }catch(e){setErr(e.message);}setLoading(false);
   };
+
   const doVerifyEmail=async()=>{
-    if(!verifyCode||verifyCode.length<6)return setErr("Enter 6-digit OTP");
+    if(!verifyCode||verifyCode.length<6)return setErr("Enter 6-digit OTP from your email");
     setErr("");setVerifyLoading(true);
     try{const d=await api("/auth/verify-email","POST",{verify_token:verifyToken,code:verifyCode},null);finish(d);}
     catch(e){setErr(e.message);}setVerifyLoading(false);
   };
+
   const doSendPhoneOtp=async()=>{
-    if(phone.length!==10)return setErr("Enter valid 10-digit mobile number");
+    const cleaned=phone.replace(/\D/g,"");
+    if(cleaned.length!==10)return setErr("Enter valid 10-digit mobile number");
     setErr("");setLoading(true);
-    try{const d=await api("/auth/phone-otp-request","POST",{phone},null);setOtpToken(d.otp_token);setOtpSentTo(d.sent_to||"");setPhoneStep("otp");}
+    try{const d=await api("/auth/phone-otp-request","POST",{phone:cleaned},null);setOtpToken(d.otp_token);setOtpSentTo(d.sent_to||"");setPhoneStep("otp");}
     catch(e){setErr(e.message);}setLoading(false);
   };
+
   const doVerifyPhoneOtp=async()=>{
     if(!otpCode||otpCode.length<6)return setErr("Enter 6-digit OTP");
     setErr("");setLoading(true);
     try{const d=await api("/auth/phone-otp-verify","POST",{otp_token:otpToken,code:otpCode},null);finish(d);}
     catch(e){setErr(e.message);}setLoading(false);
   };
-  const sw=t=>{setTab(t);setErr("");setLoginMode("password");setPhoneStep("input");setOtpCode("");setVerifyCode("");};
 
-  return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
-    <div style={{background:C.green,padding:"0 24px",height:62,display:"flex",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+  const warming=serverStatus==="checking";
+
+  return(<div style={{minHeight:"100vh",background:"#f5f6fa",display:"flex",flexDirection:"column"}}>
+    <div style={{background:"#0B6623",padding:"0 24px",height:62,display:"flex",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
-        <div style={{width:42,height:42,background:"#fff",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:900,color:C.green}}>G</div>
-        <div>
-          <div style={{color:"#fff",fontWeight:800,fontSize:17,letterSpacing:0.3}}>GSTAT AI</div>
-          <div style={{color:"rgba(255,255,255,0.8)",fontSize:10}}>AI-Powered GST Litigation Platform</div>
-        </div>
+        <div style={{width:42,height:42,background:"#fff",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:20,color:"#0B6623"}}>G</div>
+        <div><div style={{color:"#fff",fontWeight:800,fontSize:17}}>GSTAT AI</div><div style={{color:"rgba(255,255,255,0.75)",fontSize:10}}>AI-Powered GST Litigation Platform</div></div>
       </div>
     </div>
-    <div style={{background:C.navy,padding:"8px 24px",display:"flex",alignItems:"center",gap:8}}>
-      <span style={{color:"rgba(255,255,255,0.6)",fontSize:11}}>🏠 Home</span>
-      <span style={{color:"rgba(255,255,255,0.3)"}}>›</span>
+    <div style={{background:"#1a2b4e",padding:"8px 24px",display:"flex",alignItems:"center",gap:8}}>
+      <span style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>🏠 Home</span><span style={{color:"rgba(255,255,255,0.3)"}}>›</span>
       <span style={{color:"#fff",fontSize:11,fontWeight:600}}>Login / Register</span>
+      {serverStatus==="slow"&&<span style={{marginLeft:"auto",fontSize:10,color:"#fbbf24"}}>⏳ Server waking up... (free plan cold start ~30s)</span>}
+      {serverStatus==="awake"&&<span style={{marginLeft:"auto",fontSize:10,color:"#86efac"}}>✅ Server ready</span>}
     </div>
     <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"32px 16px"}}>
       <div style={{width:"100%",maxWidth:460,background:"#fff",borderRadius:10,boxShadow:"0 4px 24px rgba(0,0,0,0.1)",overflow:"hidden"}}>
-        <div style={{background:C.navy,padding:"18px 24px"}}>
-          <div style={{color:"#fff",fontWeight:700,fontSize:16}}>🔐 Login to GSTAT AI</div>
-          <div style={{color:"rgba(255,255,255,0.65)",fontSize:11,marginTop:3}}>GST Litigation & Appeal Drafting Platform for Tax Professionals</div>
+        <div style={{background:"#1a2b4e",padding:"18px 24px"}}>
+          <div style={{color:"#fff",fontWeight:700,fontSize:16}}>🔐 {tab==="verify_email"?"Verify Your Email":"Login to GSTAT AI"}</div>
+          <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,marginTop:3}}>GST Litigation & Appeal Drafting Platform for Tax Professionals</div>
         </div>
         <div style={{padding:24}}>
-          <div style={{display:"flex",background:"#f0f2f5",borderRadius:7,padding:4,marginBottom:20}}>
-            {[["login","📧 Email/Password"],["phone","📱 Mobile OTP"],["register","✏️ Register"]].map(([k,l])=>(
-              <button key={k} onClick={()=>sw(k)} style={{flex:1,padding:"8px 4px",border:"none",borderRadius:5,cursor:"pointer",
-                fontSize:11,fontWeight:tab===k?700:400,fontFamily:"inherit",
-                background:tab===k?"#fff":"transparent",color:tab===k?C.navy:C.muted,
-                boxShadow:tab===k?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>{l}</button>
+          {tab!=="verify_email"&&(<div style={{display:"flex",background:"#f0f2f5",borderRadius:7,padding:4,marginBottom:20}}>
+            {[["login","📧 Email/Pass"],["phone","📱 Mobile OTP"],["register","✏️ Register"]].map(([k,l])=>(
+              <button key={k} onClick={()=>sw(k)} style={{flex:1,padding:"8px 4px",border:"none",borderRadius:5,cursor:"pointer",fontSize:11,fontWeight:tab===k?700:400,fontFamily:"inherit",background:tab===k?"#fff":"transparent",color:tab===k?"#1a2b4e":"#94a3b8",boxShadow:tab===k?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>{l}</button>
             ))}
-          </div>
+          </div>)}
           {err&&<div style={{background:"#fff1f0",border:"1px solid #feb2b2",color:"#c53030",padding:"10px 14px",borderRadius:6,fontSize:13,marginBottom:14}}>⚠ {err}</div>}
+
+          {/* EMAIL VERIFY */}
+          {tab==="verify_email"&&(<div>
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:16,marginBottom:16,textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:6}}>📧</div>
+              <div style={{fontWeight:700,color:"#166534",marginBottom:4}}>OTP sent to your email!</div>
+              <div style={{fontSize:12,color:"#166534"}}>We sent a 6-digit OTP to:</div>
+              <div style={{fontWeight:800,color:"#0B6623",fontSize:14,marginTop:6,fontFamily:"monospace"}}>{verifyEmail}</div>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Check inbox + spam folder · Valid for 30 minutes</div>
+            </div>
+            <GInput label="Enter 6-digit OTP *" placeholder="0 0 0 0 0 0" value={verifyCode} onChange={v=>setVerifyCode(v.replace(/\D/g,"").slice(0,6))} onEnter={doVerifyEmail} maxLength={6} autoFocus/>
+            <GBtn onClick={doVerifyEmail} loading={verifyLoading}>✅ Verify & Activate Account →</GBtn>
+            <button onClick={()=>{sw("register");setVerifyToken(null);}} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginTop:10,textDecoration:"underline",display:"block"}}>← Back to Register</button>
+          </div>)}
+
+          {/* EMAIL + PASSWORD */}
           {tab==="login"&&loginMode==="password"&&(<div>
             <GInput label="Email ID *" placeholder="yourname@email.com" value={email} onChange={setEmail} onEnter={doLogin}/>
             <GInput label="Password *" type="password" placeholder="••••••••" value={password} onChange={setPassword} onEnter={doLogin}/>
-            <GBtn onClick={doLogin} loading={loading} disabled={warming}>{warming?"Connecting…":"Login →"}</GBtn>
+            <GBtn onClick={doLogin} loading={loading} disabled={warming}>{warming?"Connecting to server…":"Login →"}</GBtn>
           </div>)}
+
+          {/* 2FA OTP */}
           {tab==="login"&&loginMode==="otp"&&(<div>
             <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6,padding:"10px 14px",fontSize:12,color:"#166534",marginBottom:14}}>✅ OTP sent to {otpSentTo}</div>
             <GInput label="Enter OTP *" placeholder="000000" value={otpCode} onChange={setOtpCode} onEnter={doVerifyOtp} maxLength={6} autoFocus/>
             <GBtn onClick={doVerifyOtp} loading={loading}>Verify OTP →</GBtn>
-            <button onClick={()=>{setLoginMode("password");setErr("");}} style={{background:"none",border:"none",color:C.navy,fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Back</button>
+            <button onClick={()=>{setLoginMode("password");setErr("");}} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Back</button>
           </div>)}
+
+          {/* PHONE OTP */}
           {tab==="phone"&&phoneStep==="input"&&(<div>
-            <GInput label="Registered Mobile Number *" placeholder="10-digit mobile number"
-              value={phone} onChange={v=>setPhone(v.replace(/[^0-9]/g,"").slice(0,10))} onEnter={doSendPhoneOtp}
-              maxLength={10} hint="OTP will be sent to your registered email address"/>
+            <GInput label="Registered Mobile Number *" placeholder="10-digit mobile number" value={phone} onChange={v=>setPhone(v.replace(/\D/g,"").slice(0,10))} onEnter={doSendPhoneOtp} maxLength={10} hint="OTP will be sent to your registered email address"/>
             <GBtn onClick={doSendPhoneOtp} loading={loading} disabled={warming}>Send OTP →</GBtn>
           </div>)}
           {tab==="phone"&&phoneStep==="otp"&&(<div>
             <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6,padding:"10px 14px",fontSize:12,color:"#166534",marginBottom:14}}>✅ OTP sent to {otpSentTo}</div>
             <GInput label="Enter OTP *" placeholder="000000" value={otpCode} onChange={setOtpCode} onEnter={doVerifyPhoneOtp} maxLength={6} autoFocus/>
             <GBtn onClick={doVerifyPhoneOtp} loading={loading}>Verify & Login →</GBtn>
-            <button onClick={()=>{setPhoneStep("input");setErr("");}} style={{background:"none",border:"none",color:C.navy,fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Change number</button>
+            <button onClick={()=>{setPhoneStep("input");setErr("");}} style={{background:"none",border:"none",color:"#64748b",fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Change number</button>
           </div>)}
-          {tab==="verify_email"&&(<div>
-            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:16,marginBottom:16,textAlign:"center"}}>
-              <div style={{fontSize:28,marginBottom:6}}>📧</div>
-              <div style={{fontWeight:700,color:"#166534",marginBottom:4}}>Verify Your Email</div>
-              <div style={{fontSize:12,color:"#166534"}}>We sent a 6-digit OTP to:</div>
-              <div style={{fontWeight:700,color:"#0B6623",fontSize:13,marginTop:4}}>{verifyEmail}</div>
-            </div>
-            <GInput label="Enter OTP *" placeholder="000000" value={verifyCode}
-              onChange={v=>setVerifyCode(v.replace(/[^0-9]/g,"").slice(0,6))}
-              onEnter={doVerifyEmail} maxLength={6} autoFocus
-              hint="Check your inbox and spam folder. OTP valid for 30 minutes."/>
-            <GBtn onClick={doVerifyEmail} loading={verifyLoading}>✅ Verify Email & Login →</GBtn>
-            <button onClick={()=>{sw("register");setVerifyToken(null);}} style={{background:"none",border:"none",color:C.navy,fontSize:12,cursor:"pointer",marginTop:10,textDecoration:"underline",display:"block"}}>← Back to Register</button>
-          </div>)}
+
+          {/* REGISTER */}
           {tab==="register"&&(<div>
-            <GInput label="Full Name *" placeholder="CA Rajesh Sharma" value={regName} onChange={setRegName}/>
-            <GInput label="Firm Name *" placeholder="Sharma & Associates" value={regFirm} onChange={setRegFirm}/>
-            <GInput label="Email ID *" type="email" placeholder="yourname@email.com" value={regEmail} onChange={setRegEmail}/>
-            <GInput label="Mobile Number * (for OTP login)" placeholder="10-digit mobile number"
-              value={regPhone} onChange={v=>setRegPhone(v.replace(/[^0-9]/g,"").slice(0,10))} maxLength={10}/>
-            <div style={S.fg}><label style={S.label}>Role</label>
-              <select style={S.select} value={regRole} onChange={e=>setRegRole(e.target.value)}>
-                {[["ca","Chartered Accountant"],["advocate","Advocate / Lawyer"],["staff","Staff / Junior"],].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <GInput label="Full Name *" placeholder="Adv. Rajesh Sharma" value={regName} onChange={setRegName}/>
+              <GInput label="Firm Name *" placeholder="Sharma & Associates" value={regFirm} onChange={setRegFirm}/>
+            </div>
+            <GInput label="Email ID * (OTP will be sent here to verify)" type="email" placeholder="yourname@email.com" value={regEmail} onChange={setRegEmail}/>
+            <GInput label="Mobile Number *" placeholder="10-digit mobile number" value={regPhone} onChange={v=>setRegPhone(v.replace(/\D/g,"").slice(0,10))} maxLength={10}/>
+            <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"#4a5568",marginBottom:4}}>Role *</label>
+              <select style={{width:"100%",padding:"10px 14px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",background:"#fff"}} value={regRole} onChange={e=>setRegRole(e.target.value)}>
+                {[["advocate","Advocate / Lawyer"],["ca","Chartered Accountant"],["staff","Staff / Junior"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
               </select>
             </div>
-            <GInput label="Password * (min 8 chars)" type="password" placeholder="••••••••" value={regPass} onChange={setRegPass} onEnter={doRegister}/>
-            <GBtn onClick={doRegister} loading={loading} disabled={warming}>Create Account →</GBtn>
+            <GInput label="Password * (min 8 characters)" type="password" placeholder="••••••••" value={regPass} onChange={setRegPass} onEnter={doRegister}/>
+            <GBtn onClick={doRegister} loading={loading} disabled={warming}>Create Account & Send OTP →</GBtn>
+            <div style={{marginTop:10,fontSize:11,color:"#94a3b8",textAlign:"center"}}>An OTP will be sent to your email to verify your account</div>
           </div>)}
-          {warming&&<div style={{fontSize:11,color:C.muted,textAlign:"center",marginTop:10}}>⏳ Server waking up (~30s on free plan)…</div>}
+
+          {warming&&tab!=="verify_email"&&<div style={{fontSize:11,color:"#94a3b8",textAlign:"center",marginTop:10,padding:"8px",background:"#f8fafc",borderRadius:6}}>⏳ Connecting to server... (may take 30-60s on free plan)</div>}
         </div>
-        <div style={{background:"#f8fafc",padding:"10px 24px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.muted,textAlign:"center"}}>
+        <div style={{background:"#f8fafc",padding:"10px 24px",borderTop:"1px solid #e2e8f0",fontSize:10,color:"#94a3b8",textAlign:"center"}}>
           GSTAT AI · Enterprise GST Litigation Platform · Data encrypted at rest
         </div>
       </div>
@@ -268,9 +253,7 @@ function AuthScreen({onAuth}){
   </div>);
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN APP SHELL
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Main App Shell ────────────────────────────────────────────────────────────
 export default function App(){
   const[user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("gs_user"));}catch{return null;}});
   const[token,setToken]=useState(()=>localStorage.getItem("gs_token")||"");
@@ -279,17 +262,20 @@ export default function App(){
   const[isAdmin,setIsAdmin]=useState(false);
   const[mobileOpen,setMobileOpen]=useState(false);
   const[activeNav,setActiveNav]=useState(null);
-  const isMobile=window.innerWidth<768;
+  const[theme,setTheme]=useState(()=>localStorage.getItem("gs_theme")||"light");
+
+  // Apply theme globally
+  _theme=theme;
+  const C=getC();const S=getS();
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),4500);};
   const logout=()=>{api("/auth/logout","POST",null,token).catch(()=>{});localStorage.clear();setUser(null);setToken("");};
   const onAuth=(u,t)=>{setUser(u);setToken(t);};
   const go=k=>{setView(k);setMobileOpen(false);setActiveNav(null);};
+  const changeTheme=t=>{setTheme(t);localStorage.setItem("gs_theme",t);_theme=t;};
 
   useEffect(()=>{fetch(`${API.replace("/api","")}/health`).catch(()=>{});},[]);
-  useEffect(()=>{
-    if(token)api("/admin/me","GET",null,token).then(d=>setIsAdmin(!!d.is_admin)).catch(()=>{});
-  },[token]);
+  useEffect(()=>{if(token)api("/admin/me","GET",null,token).then(d=>setIsAdmin(!!d.is_admin)).catch(()=>{});},[token]);
   useEffect(()=>{
     if(!token)return;
     const ping=()=>api("/auth/heartbeat","POST",null,token).catch(()=>{});
@@ -299,294 +285,251 @@ export default function App(){
   if(!user||!token)return<AuthScreen onAuth={onAuth}/>;
 
   const NAV_GROUPS=[
-    {group:"MAIN",items:[{key:"dashboard",icon:"🏠",label:"Dashboard"}]},
-    {group:"CLIENTS",items:[{key:"clients",icon:"👥",label:"Clients"}]},
-    {group:"CASES",items:[
-      {key:"cases",icon:"📋",label:"All Cases"},
-      {key:"cases-new",icon:"➕",label:"New Case"},
-    ]},
-    {group:"LEGAL LIBRARY",items:[{key:"library",icon:"📚",label:"Legal Library"}]},
-    {group:"APPEAL DRAFTING",items:[{key:"appeals",icon:"⚖️",label:"Appeals"}]},
-    {group:"AI TOOLS",items:[
-      {key:"research",icon:"🔍",label:"AI Research"},
-      {key:"chat",icon:"💬",label:"AI Chat"},
-    ]},
-    {group:"SETTINGS",items:[{key:"settings",icon:"⚙️",label:"Settings"}]},
-    ...(isAdmin?[{group:"ADMIN",items:[{key:"admin",icon:"👑",label:"Admin Panel"}]}]:[]),
+    {group:"MAIN",icon:"🏠",items:[{key:"dashboard",icon:"🏠",label:"Dashboard"}]},
+    {group:"CLIENTS",icon:"👥",items:[{key:"clients",icon:"👥",label:"Clients"}]},
+    {group:"CASES",icon:"📋",items:[{key:"cases",icon:"📋",label:"All Cases"},{key:"cases-new",icon:"➕",label:"New Case"}]},
+    {group:"LEGAL LIBRARY",icon:"📚",items:[{key:"library",icon:"📚",label:"Legal Library"}]},
+    {group:"APPEAL DRAFTING",icon:"⚖️",items:[{key:"appeals",icon:"⚖️",label:"Appeals"}]},
+    {group:"AI TOOLS",icon:"🤖",items:[{key:"research",icon:"🔍",label:"AI Research"},{key:"chat",icon:"💬",label:"AI Chat"}]},
+    {group:"SETTINGS",icon:"⚙️",items:[{key:"settings",icon:"⚙️",label:"Settings"}]},
+    ...(isAdmin?[{group:"ADMIN",icon:"👑",items:[{key:"admin",icon:"👑",label:"Admin Panel"}]}]:[]),
   ];
   const allItems=NAV_GROUPS.flatMap(g=>g.items);
   const currentLabel=allItems.find(i=>i.key===view)?.label||"Dashboard";
 
-  return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
-    {/* ── Top Header ── */}
-    <div style={{background:C.green,height:56,padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+  return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",color:C.text}}>
+    {/* Top Header */}
+    <div style={{background:"#0B6623",height:56,padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:38,height:38,background:"#fff",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:18,color:C.green}}>G</div>
-        <div>
-          <div style={{color:"#fff",fontWeight:800,fontSize:15}}>GSTAT AI</div>
-          <div style={{color:"rgba(255,255,255,0.75)",fontSize:9}}>GST Litigation Platform</div>
-        </div>
+        <div style={{width:38,height:38,background:"#fff",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:18,color:"#0B6623"}}>G</div>
+        <div><div style={{color:"#fff",fontWeight:800,fontSize:15}}>GSTAT AI</div><div style={{color:"rgba(255,255,255,0.7)",fontSize:9}}>GST Litigation Platform</div></div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
-        {!isMobile&&<span style={{fontSize:11,color:"rgba(255,255,255,0.85)"}}>{user.name} · {user.role?.toUpperCase()}</span>}
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.85)",display:window.innerWidth<768?"none":"block"}}>{user.name} · {user.role?.toUpperCase()}</span>
+        <div style={{display:"flex",gap:4}}>
+          {[["☀️","light"],["🌙","dark"],["🌿","green"]].map(([icon,t])=>(
+            <button key={t} onClick={()=>changeTheme(t)} title={t+" theme"}
+              style={{background:theme===t?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.1)",border:"none",borderRadius:4,color:"#fff",fontSize:12,padding:"4px 6px",cursor:"pointer"}}>
+              {icon}
+            </button>
+          ))}
+        </div>
         <button onClick={logout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:5,color:"#fff",fontSize:11,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>Logout</button>
-        {isMobile&&<button onClick={()=>setMobileOpen(p=>!p)} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:5,color:"#fff",fontSize:18,padding:"3px 10px",cursor:"pointer"}}>☰</button>}
+        <button onClick={()=>setMobileOpen(p=>!p)} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:5,color:"#fff",fontSize:16,padding:"3px 10px",cursor:"pointer",display:window.innerWidth<768?"block":"none"}}>☰</button>
       </div>
     </div>
 
-    {/* ── Horizontal Nav (desktop) ── */}
-    {!isMobile&&(
-      <div style={{background:C.navy,borderBottom:`2px solid ${C.green}`,flexShrink:0,overflowX:"auto"}}>
-        <div style={{display:"inline-flex",height:40,alignItems:"stretch"}}>
-          {NAV_GROUPS.map(({group,items})=>(
-            <div key={group} style={{position:"relative"}}
-              onMouseEnter={()=>setActiveNav(group)} onMouseLeave={()=>setActiveNav(null)}>
-              <button style={{height:40,padding:"0 14px",border:"none",
-                background:activeNav===group?"rgba(255,255,255,0.08)":"transparent",
-                color:items.some(i=>i.key===view)?"#fff":"rgba(255,255,255,0.75)",
-                cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:600,
-                display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",
-                borderBottom:items.some(i=>i.key===view)?`2px solid ${C.green}`:"2px solid transparent"}}>
-                {items[0].icon} {group} {items.length>1&&"▾"}
-              </button>
-              {activeNav===group&&(
-                <div style={{position:"absolute",top:40,left:0,background:"#fff",
-                  boxShadow:"0 4px 16px rgba(0,0,0,0.12)",borderRadius:"0 0 7px 7px",
-                  minWidth:180,zIndex:100,borderTop:`2px solid ${C.green}`}}>
-                  {items.map(n=>(
-                    <button key={n.key} onClick={()=>go(n.key)}
-                      style={{display:"flex",alignItems:"center",gap:8,width:"100%",
-                        padding:"10px 16px",border:"none",
-                        background:view===n.key?"#f0fdf4":"#fff",
-                        color:view===n.key?C.green:C.text,
-                        cursor:"pointer",fontFamily:"inherit",fontSize:12,
-                        fontWeight:view===n.key?700:400,textAlign:"left",
-                        borderLeft:view===n.key?`3px solid ${C.green}`:"3px solid transparent"}}>
-                      <span>{n.icon}</span><span>{n.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+    {/* Nav Bar */}
+    <div style={{background:C.navBg,borderBottom:`2px solid #0B6623`,flexShrink:0,overflowX:"auto",display:window.innerWidth<768?"none":"block"}}>
+      <div style={{display:"inline-flex",height:42,alignItems:"stretch"}}>
+        {NAV_GROUPS.map(({group,icon,items})=>(
+          <div key={group} style={{position:"relative"}} onMouseEnter={()=>setActiveNav(group)} onMouseLeave={()=>setActiveNav(null)}>
+            <button style={{height:42,padding:"0 16px",border:"none",background:activeNav===group?"rgba(255,255,255,0.08)":"transparent",
+              color:items.some(i=>i.key===view)?"#fff":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",
+              fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",
+              borderBottom:items.some(i=>i.key===view)?`3px solid #0B6623`:"3px solid transparent"}}>
+              {icon} {group} {items.length>1&&<span style={{fontSize:9}}>▾</span>}
+            </button>
+            {activeNav===group&&(
+              <div style={{position:"absolute",top:42,left:0,background:C.card,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",borderRadius:"0 0 8px 8px",minWidth:190,zIndex:100,borderTop:`3px solid #0B6623`}}>
+                {items.map(n=>(
+                  <button key={n.key} onClick={()=>go(n.key)}
+                    style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 18px",border:"none",background:view===n.key?"#f0fdf4":C.card,color:view===n.key?"#0B6623":C.text,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:view===n.key?700:400,borderLeft:view===n.key?`3px solid #0B6623`:"3px solid transparent"}}>
+                    {n.icon} {n.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
-    )}
+    </div>
 
-    {/* ── Mobile Drawer ── */}
-    {isMobile&&mobileOpen&&(<>
-      <div onClick={()=>setMobileOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:148}}/>
-      <div style={{position:"fixed",top:0,left:0,bottom:0,width:260,background:"#fff",zIndex:149,overflowY:"auto",boxShadow:"4px 0 20px rgba(0,0,0,0.2)"}}>
-        <div style={{background:C.green,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+    {/* Mobile Drawer */}
+    {mobileOpen&&(<>
+      <div onClick={()=>setMobileOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:148}}/>
+      <div style={{position:"fixed",top:0,left:0,bottom:0,width:270,background:C.card,zIndex:149,overflowY:"auto",boxShadow:"4px 0 20px rgba(0,0,0,0.2)"}}>
+        <div style={{background:"#0B6623",padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{color:"#fff",fontWeight:700}}>GSTAT AI</span>
           <button onClick={()=>setMobileOpen(false)} style={{background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
         </div>
-        {NAV_GROUPS.map(({group,items})=>(<div key={group}>
-          <div style={{fontSize:10,color:C.muted,padding:"10px 16px 4px",fontWeight:700,letterSpacing:1,background:"#f8fafc"}}>{group}</div>
+        {NAV_GROUPS.map(({group,icon,items})=>(<div key={group}>
+          <div style={{fontSize:10,color:C.muted,padding:"10px 16px 4px",fontWeight:700,letterSpacing:1,background:C.bg}}>{group}</div>
           {items.map(n=><button key={n.key} onClick={()=>go(n.key)}
-            style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 16px",border:"none",
-              background:view===n.key?"#f0fdf4":"#fff",color:view===n.key?C.green:C.text,
-              cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:view===n.key?700:400,
-              borderLeft:view===n.key?`3px solid ${C.green}`:"3px solid transparent"}}>
-            <span>{n.icon}</span><span>{n.label}</span>
+            style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 16px",border:"none",background:view===n.key?"#f0fdf4":C.card,color:view===n.key?"#0B6623":C.text,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:view===n.key?700:400,borderLeft:view===n.key?`3px solid #0B6623`:"3px solid transparent"}}>
+            {n.icon} {n.label}
           </button>)}
         </div>))}
       </div>
     </>)}
 
-    {/* ── Breadcrumb ── */}
-    <div style={{background:"#fff",borderBottom:`1px solid ${C.border}`,padding:"6px 16px",display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.muted,flexShrink:0}}>
-      <span onClick={()=>go("dashboard")} style={{cursor:"pointer",color:C.green}}>🏠 Home</span>
-      <span>›</span>
-      <span style={{color:C.text,fontWeight:600}}>{currentLabel}</span>
+    {/* Breadcrumb */}
+    <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"6px 18px",display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.muted,flexShrink:0}}>
+      <span onClick={()=>go("dashboard")} style={{cursor:"pointer",color:"#0B6623",fontWeight:600}}>🏠 Home</span>
+      <span>›</span><span style={{color:C.text,fontWeight:600}}>{currentLabel}</span>
     </div>
 
-    {/* ── Main Content ── */}
-    <div style={{flex:1,padding:isMobile?10:18,overflowY:"auto"}}>
-      {view==="dashboard"    &&<GSTATDashboard token={token} toast={showToast} go={go}/>}
-      {view==="clients"      &&<ClientManager token={token} toast={showToast}/>}
-      {view==="cases"        &&<CaseList token={token} toast={showToast} go={go}/>}
-      {view==="cases-new"    &&<CaseForm token={token} toast={showToast} go={go} onSaved={()=>go("cases")}/>}
-      {view==="library"      &&<LegalLibrary token={token} toast={showToast} isAdmin={isAdmin}/>}
-      {view==="appeals"      &&<AppealManager token={token} toast={showToast} go={go}/>}
-      {view==="research"     &&<AIResearch token={token} toast={showToast}/>}
-      {view==="chat"         &&<AIChat token={token} toast={showToast}/>}
-      {view==="settings"     &&<UserSettings token={token} user={user} toast={showToast} onLogout={logout} isAdmin={isAdmin}/>}
-      {view==="admin"        &&isAdmin&&<AdminPanel token={token} toast={showToast}/>}
+    {/* Content */}
+    <div style={{flex:1,padding:18,overflowY:"auto"}}>
+      {view==="dashboard"     &&<GSTATDashboard token={token} toast={showToast} go={go} isAdmin={isAdmin}/>}
+      {view==="clients"       &&<ClientManager token={token} toast={showToast}/>}
+      {view==="cases"         &&<CaseList token={token} toast={showToast} go={go}/>}
+      {view==="cases-new"     &&<CaseForm token={token} toast={showToast} go={go} onSaved={()=>go("cases")}/>}
+      {view==="library"       &&<LegalLibrary token={token} toast={showToast} isAdmin={isAdmin}/>}
+      {view==="appeals"       &&<AppealManager token={token} toast={showToast} go={go}/>}
+      {view==="research"      &&<AIResearch token={token} toast={showToast}/>}
+      {view==="chat"          &&<AIChat token={token} toast={showToast}/>}
+      {view==="settings"      &&<UserSettings token={token} user={user} toast={showToast} onLogout={logout} isAdmin={isAdmin} theme={theme} onThemeChange={changeTheme}/>}
+      {view==="admin"         &&isAdmin&&<AdminPanel token={token} toast={showToast}/>}
     </div>
-
     {toast&&<Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
   </div>);
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// DASHBOARD
-// ══════════════════════════════════════════════════════════════════════════════
-function GSTATDashboard({token,toast,go}){
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function GSTATDashboard({token,toast,go,isAdmin}){
+  const C=getC();const S=getS();
   const[stats,setStats]=useState(null);const[loading,setLoading]=useState(true);
   useEffect(()=>{api("/dashboard","GET",null,token).then(d=>{setStats(d);setLoading(false);}).catch(()=>setLoading(false));},[token]);
   if(loading)return<Spinner/>;
   const s=stats?.stats||{};
 
-  const StatCard=({icon,label,value,color,onClick,sub})=>(
-    <div onClick={onClick} style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,
-      padding:"18px 20px",cursor:onClick?"pointer":"default",
-      borderLeft:`4px solid ${color||C.green}`,
-      boxShadow:"0 1px 4px rgba(0,0,0,0.05)",transition:"box-shadow 0.2s",
-      display:"flex",flexDirection:"column",gap:4}}
-      onMouseEnter={e=>onClick&&(e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.1)")}
-      onMouseLeave={e=>onClick&&(e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.05)")}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-        <div style={{fontSize:28}}>{icon}</div>
-        {onClick&&<span style={{fontSize:11,color:C.muted}}>View →</span>}
-      </div>
-      <div style={{fontSize:30,fontWeight:900,color:color||C.navy,lineHeight:1}}>{value??0}</div>
-      <div style={{fontSize:12,color:C.sub,fontWeight:600}}>{label}</div>
-      {sub&&<div style={{fontSize:10,color:C.muted}}>{sub}</div>}
-    </div>
-  );
-
-  const deadline_cases = stats?.recent_cases?.filter(c=>["overdue","critical"].includes(c.deadline_status))||[];
-
   return(<div style={{display:"flex",flexDirection:"column",gap:16}}>
-    {/* Welcome banner */}
-    <div style={{background:"linear-gradient(135deg,#0B6623 0%,#1a2b4e 100%)",borderRadius:10,padding:"20px 28px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+    {/* Banner */}
+    <div style={{background:"linear-gradient(135deg,#0B6623,#1a2b4e)",borderRadius:10,padding:"20px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
       <div>
         <div style={{color:"#fff",fontWeight:800,fontSize:20,marginBottom:4}}>⚖️ GSTAT AI Dashboard</div>
-        <div style={{color:"rgba(255,255,255,0.75)",fontSize:12}}>AI-Powered GST Litigation Platform · Grounded in your Legal Library</div>
+        <div style={{color:"rgba(255,255,255,0.7)",fontSize:12}}>AI-Powered GST Litigation · Every citation from your Legal Library only</div>
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button onClick={()=>go("cases-new")} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"#fff",borderRadius:7,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ New Case</button>
-        <button onClick={()=>go("appeals")} style={{background:"#fff",border:"none",color:"#0B6623",borderRadius:7,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>⚖️ Draft Appeal</button>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>go("cases-new")} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",color:"#fff",borderRadius:7,padding:"8px 18px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ New Case</button>
+        <button onClick={()=>go("appeals")} style={{background:"#fff",border:"none",color:"#0B6623",borderRadius:7,padding:"8px 18px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>⚖️ Draft Appeal</button>
       </div>
     </div>
 
-    {/* KPI Grid */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12}}>
-      <StatCard icon="👥" label="Total Clients" value={s.total_clients} color="#1a2b4e" onClick={()=>go("clients")}/>
-      <StatCard icon="📋" label="Total Cases" value={s.total_cases} color="#0B6623" onClick={()=>go("cases")}/>
-      <StatCard icon="🔓" label="Open Cases" value={s.open_cases} color="#2563eb" onClick={()=>go("cases")}/>
-      <StatCard icon="🚨" label="Critical" value={s.critical_deadline_cases} color="#dc2626" onClick={()=>go("cases")} sub="Deadline < 7 days"/>
-      <StatCard icon="✅" label="Filed" value={s.filed_cases} color="#16a34a" onClick={()=>go("cases")}/>
-      <StatCard icon="💰" label="Total Demand" value={fR(s.total_demand)} color="#9333ea" sub="Across all cases"/>
-    </div>
-
-    {/* Critical alerts */}
-    {s.critical_deadline_cases>0&&(
-      <div style={{background:"#fff1f0",border:"1px solid #fca5a5",borderRadius:8,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:20}}>🚨</span>
-        <div>
-          <div style={{fontWeight:700,color:"#c53030",fontSize:13}}>{s.critical_deadline_cases} case(s) with critical deadlines!</div>
-          <div style={{fontSize:11,color:"#c53030",opacity:0.8}}>Limitation date within 7 days — file immediately</div>
+    {/* KPI Row */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:12}}>
+      {[[`${s.total_clients||0}`,"👥","Clients","#1a2b4e","clients"],
+        [`${s.total_cases||0}`,"📋","Total Cases","#0B6623","cases"],
+        [`${s.open_cases||0}`,"🔓","Open Cases","#2563eb","cases"],
+        [`${s.critical_deadline_cases||0}`,"🚨","Critical","#dc2626","cases"],
+        [`${s.filed_cases||0}`,"✅","Filed","#16a34a","cases"],
+        [fR(s.total_demand),"💰","Total Demand","#9333ea",null],
+      ].map(([val,icon,label,color,key])=>(
+        <div key={label} onClick={()=>key&&go(key)}
+          style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 14px",
+            cursor:key?"pointer":"default",borderTop:`4px solid ${color}`,boxShadow:C.shadow,
+            transition:"transform 0.15s"}}
+          onMouseEnter={e=>key&&(e.currentTarget.style.transform="translateY(-2px)")}
+          onMouseLeave={e=>key&&(e.currentTarget.style.transform="")}>
+          <div style={{fontSize:22,marginBottom:6}}>{icon}</div>
+          <div style={{fontSize:label==="Total Demand"?14:26,fontWeight:900,color,lineHeight:1,marginBottom:4}}>{val}</div>
+          <div style={{fontSize:11,color:C.muted,fontWeight:600}}>{label}</div>
         </div>
-        <button onClick={()=>go("cases")} style={{marginLeft:"auto",background:"#c53030",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>View Cases</button>
+      ))}
+    </div>
+
+    {/* Critical alert */}
+    {s.critical_deadline_cases>0&&(
+      <div style={{background:"#fff1f0",border:"2px solid #fca5a5",borderRadius:8,padding:"12px 18px",display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:24}}>🚨</span>
+        <div style={{flex:1}}><div style={{fontWeight:700,color:"#c53030"}}>{s.critical_deadline_cases} case(s) — Deadline within 7 days!</div><div style={{fontSize:11,color:"#c53030",opacity:0.8}}>Take immediate action to avoid limitation expiry</div></div>
+        <button onClick={()=>go("cases")} style={{background:"#c53030",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>View Cases →</button>
       </div>
     )}
 
-    {/* Main content grid */}
+    {/* Library alert */}
+    {!s.total_legal_refs&&(
+      <div style={{background:"#fffbeb",border:"2px solid #fcd34d",borderRadius:8,padding:"12px 18px",display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:24}}>⚠️</span>
+        <div style={{flex:1}}><div style={{fontWeight:700,color:"#92400e"}}>Legal Library is Empty!</div><div style={{fontSize:11,color:"#92400e"}}>AI cannot cite any references without a library. Upload GST Act sections, Rules, Circulars and Court orders first.</div></div>
+        <button onClick={()=>go("library")} style={{background:"#0B6623",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Upload Now</button>
+      </div>
+    )}
+
+    {/* 2 column — cases + hearings */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-      {/* Recent Cases */}
-      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{fontWeight:700,color:C.text,fontSize:14}}>📋 Recent Cases</div>
-          <button onClick={()=>go("cases")} style={{background:"none",border:"none",color:C.green,cursor:"pointer",fontSize:11,fontWeight:700}}>View All →</button>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",boxShadow:C.shadow}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.bg}}>
+          <span style={{fontWeight:700,color:C.text,fontSize:13}}>📋 Recent Cases</span>
+          <button onClick={()=>go("cases")} style={{background:"none",border:"none",color:"#0B6623",cursor:"pointer",fontSize:11,fontWeight:700}}>View All →</button>
         </div>
-        <div style={{padding:"0 4px"}}>
-          {stats?.recent_cases?.length>0?stats.recent_cases.map(c=>(
-            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}
-              onClick={()=>go("cases")}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:
-                c.deadline_status==="overdue"||c.deadline_status==="critical"?"#dc2626":
-                c.deadline_status==="warning"?"#d97706":"#16a34a",flexShrink:0}}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:12,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client_name}</div>
-                <div style={{fontSize:10,color:C.muted}}>{c.case_number}</div>
-              </div>
-              <div style={{textAlign:"right",flexShrink:0}}>
-                {badge(STATUS_CONFIG[c.status]?.label||c.status,STATUS_CONFIG[c.status]?.color||"gray")}
-                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{fR(c.demand_total)}</div>
-              </div>
-            </div>
-          )):<div style={{padding:30,textAlign:"center",color:C.muted,fontSize:12}}>
-            No cases yet.<br/>
-            <span onClick={()=>go("cases-new")} style={{color:C.green,cursor:"pointer",textDecoration:"underline"}}>Create your first case</span>
-          </div>}
-        </div>
+        {stats?.recent_cases?.length>0?stats.recent_cases.map(c=>(
+          <div key={c.id} onClick={()=>go("cases")} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+            <div style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:c.deadline_status==="overdue"||c.deadline_status==="critical"?"#dc2626":c.deadline_status==="warning"?"#d97706":"#16a34a"}}/>
+            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:C.text}}>{c.client_name}</div><div style={{fontSize:10,color:C.muted}}>{c.case_number}</div></div>
+            <div style={{textAlign:"right",flexShrink:0}}>{badge(STATUS_CONFIG[c.status]?.label||c.status,STATUS_CONFIG[c.status]?.color)}<div style={{fontSize:10,color:C.muted,marginTop:2}}>{fR(c.demand_total)}</div></div>
+          </div>
+        )):<div style={{padding:30,textAlign:"center",color:C.muted,fontSize:12}}>No cases yet · <span onClick={()=>go("cases-new")} style={{color:"#0B6623",cursor:"pointer"}}>Create first case</span></div>}
       </div>
 
-      {/* Upcoming Hearings */}
-      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{fontWeight:700,color:C.text,fontSize:14}}>📅 Upcoming Hearings</div>
-          <button onClick={()=>go("cases")} style={{background:"none",border:"none",color:C.green,cursor:"pointer",fontSize:11,fontWeight:700}}>All Cases →</button>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",boxShadow:C.shadow}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.bg}}>
+          <span style={{fontWeight:700,color:C.text,fontSize:13}}>📅 Upcoming Hearings</span>
         </div>
-        <div style={{padding:"0 4px"}}>
-          {stats?.upcoming_hearings?.length>0?stats.upcoming_hearings.map((h,i)=>(
-            <div key={i} style={{display:"flex",gap:12,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
-              <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:48,flexShrink:0}}>
-                <div style={{fontSize:16,fontWeight:900,color:"#0B6623",lineHeight:1}}>{new Date(h.hearing_date).getDate()}</div>
-                <div style={{fontSize:9,color:"#0B6623",fontWeight:700}}>{new Date(h.hearing_date).toLocaleDateString("en-IN",{month:"short"})}</div>
-              </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:12,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.client_name}</div>
-                <div style={{fontSize:10,color:C.muted}}>{h.case_number}</div>
-                <div style={{fontSize:10,color:C.sub}}>{h.forum||"Court"}</div>
-              </div>
+        {stats?.upcoming_hearings?.length>0?stats.upcoming_hearings.map((h,i)=>(
+          <div key={i} style={{display:"flex",gap:12,padding:"10px 16px",borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:44,flexShrink:0}}>
+              <div style={{fontSize:18,fontWeight:900,color:"#0B6623",lineHeight:1}}>{new Date(h.hearing_date).getDate()}</div>
+              <div style={{fontSize:9,color:"#0B6623",fontWeight:700}}>{new Date(h.hearing_date).toLocaleDateString("en-IN",{month:"short"})}</div>
             </div>
-          )):<div style={{padding:30,textAlign:"center",color:C.muted,fontSize:12}}>No upcoming hearings scheduled</div>}
-        </div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:C.text}}>{h.client_name}</div><div style={{fontSize:10,color:C.muted}}>{h.case_number} · {h.forum||"Court"}</div></div>
+          </div>
+        )):<div style={{padding:30,textAlign:"center",color:C.muted,fontSize:12}}>No upcoming hearings</div>}
       </div>
     </div>
 
-    {/* Quick Actions + Library status */}
-    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16}}>
-      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-        <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:14}}>⚡ Quick Actions</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[["👥","New Client","clients"],["📋","New Case","cases-new"],["⚖️","Draft Appeal","appeals"],
-            ["📚","Legal Library","library"],["🔍","AI Research","research"],["💬","AI Chat","chat"]
-          ].map(([icon,label,key])=>(
-            <div key={key} onClick={()=>go(key)}
-              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"14px 10px",
-                background:"#f8fafc",borderRadius:8,cursor:"pointer",border:`1px solid ${C.border}`,
-                transition:"all 0.15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background="#f0fdf4";e.currentTarget.style.borderColor="#0B6623";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.borderColor=C.border;}}>
-              <span style={{fontSize:22}}>{icon}</span>
-              <span style={{fontSize:11,fontWeight:600,color:C.text,textAlign:"center"}}>{label}</span>
-            </div>
-          ))}
-        </div>
+    {/* Quick actions */}
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:C.shadow}}>
+      <div style={{fontWeight:700,color:C.text,fontSize:13,marginBottom:14}}>⚡ Quick Actions</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:10}}>
+        {[["👥","Add Client","clients","Add or manage your GST clients"],
+          ["📋","New Case","cases-new","Start tracking a new matter"],
+          ["⚖️","Draft Appeal","appeals","AI-powered appeal drafting"],
+          ["📚","Legal Library","library","Upload references for AI"],
+          ["🔍","AI Research","research","Search your legal library"],
+          ["💬","AI Chat","chat","Ask legal questions"],
+        ].map(([icon,label,key,desc])=>(
+          <div key={key} onClick={()=>go(key)}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"16px 10px",background:C.bg,borderRadius:8,cursor:"pointer",border:`1px solid ${C.border}`,textAlign:"center",transition:"all 0.15s"}}
+            onMouseEnter={e=>{e.currentTarget.style.background="#f0fdf4";e.currentTarget.style.borderColor="#0B6623";e.currentTarget.style.transform="translateY(-2px)";}}
+            onMouseLeave={e=>{e.currentTarget.style.background=C.bg;e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="";}}>
+            <span style={{fontSize:28}}>{icon}</span>
+            <span style={{fontSize:12,fontWeight:700,color:C.text}}>{label}</span>
+            <span style={{fontSize:10,color:C.muted,lineHeight:1.4}}>{desc}</span>
+          </div>
+        ))}
       </div>
+    </div>
 
-      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-        <div style={{fontWeight:700,color:C.text,fontSize:14,marginBottom:14}}>📚 Library Status</div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:s.total_legal_refs>0?"#f0fdf4":"#fff1f0",borderRadius:8,border:`1px solid ${s.total_legal_refs>0?"#86efac":"#fca5a5"}`}}>
-            <span style={{fontSize:12,color:s.total_legal_refs>0?"#166534":"#c53030",fontWeight:600}}>
-              {s.total_legal_refs>0?"✅ Library Active":"⚠ Library Empty"}
-            </span>
-            <span style={{fontWeight:900,fontSize:20,color:s.total_legal_refs>0?"#0B6623":"#dc2626"}}>{s.total_legal_refs||0}</span>
-          </div>
-          <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
-            {s.total_legal_refs>0
-              ?`${s.total_legal_refs} references uploaded. AI will cite from these when generating appeal drafts and research memos.`
-              :"Legal Library is empty. AI cannot cite any references. Upload GST Act sections, Rules, Circulars and Court orders first."}
-          </div>
-          <button onClick={()=>go("library")} style={{...S.btn,fontSize:11,padding:"8px"}}>
-            {s.total_legal_refs>0?"View Library →":"+ Upload References →"}
-          </button>
+    {/* Library status + stats */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:C.shadow}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:13,marginBottom:12}}>📚 Legal Library Status</div>
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:12}}>
+          <div style={{width:60,height:60,borderRadius:"50%",background:s.total_legal_refs>0?"#f0fdf4":"#fff1f0",border:`3px solid ${s.total_legal_refs>0?"#0B6623":"#dc2626"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:s.total_legal_refs>0?"#0B6623":"#dc2626",flexShrink:0}}>{s.total_legal_refs||0}</div>
+          <div><div style={{fontWeight:700,fontSize:14,color:s.total_legal_refs>0?"#0B6623":"#dc2626"}}>{s.total_legal_refs>0?"References Uploaded":"Library Empty"}</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>{s.total_legal_refs>0?"AI will cite from these references":"Upload references to enable AI citations"}</div></div>
         </div>
+        <button onClick={()=>go("library")} style={{...S.btn,fontSize:11,padding:"8px 14px",width:"100%"}}>{s.total_legal_refs>0?"Manage Library →":"+ Upload First Reference →"}</button>
       </div>
+      {isAdmin&&(<div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",boxShadow:C.shadow}}>
+        <div style={{fontWeight:700,color:C.text,fontSize:13,marginBottom:12}}>👑 Admin Quick View</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {[["👥","Total Users",s.total_users||"—"],["📋","Total Cases",s.total_cases||0],["⚖️","Total Appeals",s.total_appeals||0]].map(([icon,label,val])=>(
+            <div key={label} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}><span style={{color:C.muted}}>{icon} {label}</span><span style={{fontWeight:700,color:C.text}}>{val}</span></div>
+          ))}
+          <button onClick={()=>go("admin")} style={{...S.btnO,fontSize:11,padding:"8px",width:"100%",marginTop:4}}>Admin Panel →</button>
+        </div>
+      </div>)}
     </div>
   </div>);
 }
-
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CLIENT MANAGER
 // ══════════════════════════════════════════════════════════════════════════════
 function ClientManager({token,toast}){
+  const C=getC();const S=getS();
   const[clients,setClients]=useState([]);const[loading,setLoading]=useState(true);
   const[search,setSearch]=useState("");const[modal,setModal]=useState(null);
   const[viewing,setViewing]=useState(null);
@@ -703,6 +646,7 @@ function ClientManager({token,toast}){
 }
 
 function ClientForm(f,setF,save,saving,onCancel){
+  const C=getC();const S=getS();
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   return(<div>
     <div style={S.col2}>
@@ -740,6 +684,7 @@ function ClientForm(f,setF,save,saving,onCancel){
 // CASE LIST
 // ══════════════════════════════════════════════════════════════════════════════
 function CaseList({token,toast,go}){
+  const C=getC();const S=getS();
   const[cases,setCases]=useState([]);const[loading,setLoading]=useState(true);
   const[filter,setFilter]=useState({search:"",status:"",priority:""});
   const[hearingModal,setHearingModal]=useState(null);const[hf,setHf]=useState({hearing_date:"",forum:"",notes:"",outcome:"",next_date:""});
@@ -829,6 +774,7 @@ function CaseList({token,toast,go}){
 // NEW CASE FORM
 // ══════════════════════════════════════════════════════════════════════════════
 function CaseForm({token,toast,go,onSaved}){
+  const C=getC();const S=getS();
   const[clients,setClients]=useState([]);const[saving,setSaving]=useState(false);
   const[f,setF]=useState({client_id:"",case_type:"appeal",forum:"GST Appellate Tribunal (GSTAT)",order_ref_no:"",order_date:"",order_type:"Order-in-Original (OIO)",section_invoked:"",demand_tax:"",demand_interest:"",demand_penalty:"",tax_period:"",issuing_officer:"",jurisdiction:"",priority:"medium"});
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
@@ -919,16 +865,9 @@ function CaseForm({token,toast,go,onSaved}){
 // ══════════════════════════════════════════════════════════════════════════════
 // LEGAL LIBRARY
 // ══════════════════════════════════════════════════════════════════════════════
-const REF_TYPES=[
-  ["act_section","GST Act Section"],["rule","GST Rule"],["circular","CBIC Circular"],
-  ["notification","Notification"],["gst_council","GST Council Recommendation"],
-  ["gstat_order","GSTAT Order"],["hc_order","High Court Order"],
-  ["sc_order","Supreme Court Order"],["aar","AAR / AAAR Order"],["user_upload","Own Upload / Research"],
-];
-const REF_COLORS={act_section:"blue",rule:"teal",circular:"purple",notification:"amber",
-  gst_council:"green",gstat_order:"teal",hc_order:"blue",sc_order:"green",aar:"gray",user_upload:"gray"};
 
 function LegalLibrary({token,toast,isAdmin}){
+  const C=getC();const S=getS();
   const[refs,setRefs]=useState([]);const[loading,setLoading]=useState(true);
   const[search,setSearch]=useState("");const[filterType,setFilterType]=useState("");
   const[page,setPage]=useState(1);const[total,setTotal]=useState(0);
@@ -999,7 +938,7 @@ function LegalLibrary({token,toast,isAdmin}){
       </div>)}
       {viewing.tags&&<div style={{marginBottom:10}}><span style={S.label}>Tags</span><div style={{fontSize:12,color:C.sub}}>{viewing.tags}</div></div>}
       <div><span style={S.label}>Full Text ({(viewing.full_text||"").length.toLocaleString()} chars)</span></div>
-      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:6,padding:16,maxHeight:500,overflowY:"auto",fontSize:12,lineHeight:1.8,color:"#1a1a1a",whiteSpace:"pre-wrap",fontFamily:"Georgia,serif",marginTop:6}}>
+      <div style={{background:"#fff",color:"#1a1a1a",border:"1px solid #d0d7de",borderRadius:6,padding:18,maxHeight:520,overflowY:"auto",fontSize:13,lineHeight:1.9,whiteSpace:"pre-wrap",fontFamily:"Georgia,'Times New Roman',serif",marginTop:6,boxShadow:"inset 0 1px 4px rgba(0,0,0,0.04)"}}>
         {viewing.full_text}
       </div>
     </div>
@@ -1110,6 +1049,7 @@ function LegalLibrary({token,toast,isAdmin}){
 // APPEAL MANAGER — wraps AppealList + AppealWorkspace
 // ══════════════════════════════════════════════════════════════════════════════
 function AppealManager({token,toast,go}){
+  const C=getC();const S=getS();
   const[appeals,setAppeals]=useState([]);const[loading,setLoading]=useState(true);
   const[active,setActive]=useState(null);
   const[cases,setCases]=useState([]);
@@ -1160,10 +1100,9 @@ function AppealManager({token,toast,go}){
 }
 
 // ── AppealWorkspace (5 Steps) ─────────────────────────────────────────────────
-const APPEAL_FORUMS=["GST Appellate Tribunal (GSTAT)","Commissioner (Appeals)","Additional Commissioner (Appeals)","High Court","Supreme Court"];
-const ORDER_TYPES=["Order-in-Original (OIO)","Show Cause Notice (SCN)","DRC-07 (Summary Demand)","ASMT-13 (Best Judgement)","ADT-04 (Audit Report)","REG-19 (Cancellation)","Other"];
 
 function AppealWorkspace({token,toast,appeal,onBack,onRefresh}){
+  const C=getC();const S=getS();
   const[step,setStep]=useState(appeal._isNew?1:appeal.ai_draft?4:2);
   const[appealId,setAppealId]=useState(appeal.id||null);
   const[cases,setCases]=useState([]);
@@ -1358,6 +1297,7 @@ function AppealWorkspace({token,toast,appeal,onBack,onRefresh}){
 // AI RESEARCH
 // ══════════════════════════════════════════════════════════════════════════════
 function AIResearch({token,toast}){
+  const C=getC();const S=getS();
   const[query,setQuery]=useState("");const[mode,setMode]=useState("keyword");
   const[results,setResults]=useState([]);const[memo,setMemo]=useState("");
   const[step,setStep]=useState("search"); // search | results | memo
@@ -1477,6 +1417,7 @@ function AIResearch({token,toast}){
 // AI CHAT
 // ══════════════════════════════════════════════════════════════════════════════
 function AIChat({token,toast}){
+  const C=getC();const S=getS();
   const[messages,setMessages]=useState([{role:"assistant",content:"Namaste! 🙏 I am GSTAT AI Chat Assistant.\n\nMain sirf aapki Legal Library ke references se jawab dunga. Koi bhi citation aapke uploaded documents se hi hogi — internet ya memory se nahi.\n\nExamples:\n• Section 16(4) ITC reversal par kya case law hai?\n• SCN time-barred hone par kya defense hai?\n• GSTAT mein appeal file karne ki kya procedure hai?"}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
   const bottomRef=useRef();
@@ -1545,127 +1486,79 @@ function AIChat({token,toast}){
 // ══════════════════════════════════════════════════════════════════════════════
 // USER SETTINGS + ADMIN PANEL
 // ══════════════════════════════════════════════════════════════════════════════
-function UserSettings({token,user,toast,onLogout,isAdmin}){
+function UserSettings({token,user,toast,onLogout,isAdmin,theme,onThemeChange}){
+  const C=getC();const S=getS();
+  const[activeTab,setActiveTab]=useState("profile");
   const[f,setF]=useState({name:user?.name||"",firm_name:user?.firm_name||"",phone:user?.phone||""});
   const[cp,setCp]=useState({current:"",new_pass:"",confirm:""});
-  const[saving,setSaving]=useState(false);const[adminKey,setAdminKey]=useState("");
+  const[saving,setSaving]=useState(false);
+  const[adminKey,setAdminKey]=useState("");
   const[lang,setLang]=useState("english");
   useEffect(()=>{api("/auth/profile","GET",null,token).then(d=>setLang(d.user?.language||"english")).catch(()=>{});},[token]);
-  const saveLang=async(l)=>{
-    try{await api("/auth/language","PUT",{language:l},token);setLang(l);toast(`✅ Language set to ${l.charAt(0).toUpperCase()+l.slice(1)}`,"success");}
-    catch(e){toast(e.message,"error");}
-  };
   const saveProfile=async()=>{setSaving(true);try{await api("/auth/profile","PUT",f,token);toast("✅ Profile updated","success");}catch(e){toast(e.message,"error");}setSaving(false);};
-  const changePass=async()=>{
-    if(!cp.current||!cp.new_pass)return toast("Fill all fields","error");
-    if(cp.new_pass!==cp.confirm)return toast("Passwords don't match","error");
-    if(cp.new_pass.length<8)return toast("Min 8 characters","error");
-    setSaving(true);try{await api("/auth/change-password","POST",{current_password:cp.current,new_password:cp.new_pass},token);toast("✅ Password changed. Please login again.","success");setTimeout(onLogout,2000);}catch(e){toast(e.message,"error");}setSaving(false);
-  };
-  const claimAdmin=async()=>{
-    if(!adminKey)return toast("Enter setup key","error");
-    try{await api("/admin/claim","POST",{setup_key:adminKey},token);toast("✅ Admin access granted! Refresh page.","success");setTimeout(()=>window.location.reload(),2000);}catch(e){toast(e.message,"error");}
-  };
-
-  return(<div>
-    <div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>👤 Profile Settings</div>
-      <div style={S.col2}>
-        <div style={S.fg}><label style={S.label}>Full Name</label><input style={S.input} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/></div>
-        <div style={S.fg}><label style={S.label}>Firm Name</label><input style={S.input} value={f.firm_name} onChange={e=>setF(p=>({...p,firm_name:e.target.value}))}/></div>
-      </div>
-      <div style={S.col2}>
-        <div style={S.fg}><label style={S.label}>Email (cannot change)</label><input style={{...S.input,background:"#f8fafc",color:C.muted}} value={user?.email||""} disabled/></div>
-        <div style={S.fg}><label style={S.label}>Mobile Number</label><input style={S.input} value={f.phone} onChange={e=>setF(p=>({...p,phone:e.target.value.replace(/\D/g,"").slice(0,10)}))}/></div>
-      </div>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={saveProfile} disabled={saving} style={S.btn}>{saving?"Saving…":"Save Profile"}</button>
-        <button onClick={onLogout} style={{...S.btnR,marginLeft:"auto"}}>Logout</button>
-      </div>
+  const changePass=async()=>{if(!cp.current||!cp.new_pass)return toast("Fill all fields","error");if(cp.new_pass!==cp.confirm)return toast("Passwords don't match","error");if(cp.new_pass.length<8)return toast("Min 8 characters","error");setSaving(true);try{await api("/auth/change-password","POST",{current_password:cp.current,new_password:cp.new_pass},token);toast("✅ Password changed. Login again.","success");setTimeout(onLogout,2000);}catch(e){toast(e.message,"error");}setSaving(false);};
+  const saveLang=async(l)=>{try{await api("/auth/language","PUT",{language:l},token);setLang(l);toast(`✅ Language: ${l}`,"success");}catch(e){toast(e.message,"error");};};
+  const claimAdmin=async()=>{if(!adminKey)return toast("Enter key","error");try{await api("/admin/claim","POST",{setup_key:adminKey},token);toast("✅ Admin granted! Refresh.","success");setTimeout(()=>window.location.reload(),2000);}catch(e){toast(e.message,"error");};};
+  const TABS=[["👤","profile","Profile"],["🔐","password","Password"],["🌐","language","Language"],["🎨","display","Display"],["ℹ️","account","Account"]];
+  return(<div style={{maxWidth:700,margin:"0 auto"}}>
+    <div style={{fontWeight:700,fontSize:16,color:C.text,marginBottom:16}}>⚙️ Settings</div>
+    <div style={{display:"flex",gap:0,background:C.bg,borderRadius:8,padding:4,marginBottom:20,border:`1px solid ${C.border}`}}>
+      {TABS.map(([icon,key,label])=>(<button key={key} onClick={()=>setActiveTab(key)} style={{flex:1,padding:"9px 4px",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:activeTab===key?700:400,background:activeTab===key?C.card:C.bg,color:activeTab===key?"#0B6623":C.muted,boxShadow:activeTab===key?"0 1px 4px rgba(0,0,0,0.1)":"none",whiteSpace:"nowrap"}}>{icon} {label}</button>))}
     </div>
-    <div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>🔐 Change Password</div>
-      <div style={S.fg}><label style={S.label}>Current Password</label><input type="password" style={S.input} value={cp.current} onChange={e=>setCp(p=>({...p,current:e.target.value}))}/></div>
-      <div style={S.col2}>
-        <div style={S.fg}><label style={S.label}>New Password (min 8 chars)</label><input type="password" style={S.input} value={cp.new_pass} onChange={e=>setCp(p=>({...p,new_pass:e.target.value}))}/></div>
-        <div style={S.fg}><label style={S.label}>Confirm New Password</label><input type="password" style={S.input} value={cp.confirm} onChange={e=>setCp(p=>({...p,confirm:e.target.value}))}/></div>
-      </div>
-      <button onClick={changePass} disabled={saving} style={S.btn}>Change Password</button>
-    </div>
-    {!isAdmin&&(<div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>👑 Admin Setup (one-time)</div>
-      <div style={{fontSize:12,color:C.muted,marginBottom:10}}>If you are the platform owner, enter the ADMIN_SETUP_KEY from your Render environment to claim admin access.</div>
-      <div style={{display:"flex",gap:8}}>
-        <input type="password" style={{...S.input,flex:1}} value={adminKey} onChange={e=>setAdminKey(e.target.value)} placeholder="Enter ADMIN_SETUP_KEY"/>
-        <button onClick={claimAdmin} style={S.btn}>Claim Admin</button>
-      </div>
-    </div>)}
-    <div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>🌐 Language Settings</div>
-      <div style={{fontSize:12,color:C.muted,marginBottom:12}}>AI replies (Appeal Draft, Research, Chat) will be generated in your selected language.</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {[["english","🇬🇧 English","AI responds in formal English"],
-          ["hindi","🇮🇳 Hindi","AI responds in Hindi (Devanagari)"],
-          ["hinglish","🔀 Hinglish","Hindi explanation + English citations"]
-        ].map(([val,label,desc])=>(
-          <div key={val} onClick={()=>saveLang(val)}
-            style={{flex:1,minWidth:140,padding:12,borderRadius:8,cursor:"pointer",
-              border:`2px solid ${lang===val?"#0B6623":C.border}`,
-              background:lang===val?"#f0fdf4":"#fff",textAlign:"center"}}>
-            <div style={{fontSize:18,marginBottom:4}}>{label.split(" ")[0]}</div>
-            <div style={{fontWeight:700,fontSize:12,color:lang===val?"#0B6623":C.text}}>{label.split(" ")[1]}</div>
-            <div style={{fontSize:10,color:C.muted,marginTop:2}}>{desc}</div>
-            {lang===val&&<div style={{fontSize:10,color:"#0B6623",marginTop:4,fontWeight:700}}>✅ Active</div>}
-          </div>
-        ))}
-      </div>
-    </div>
-    <div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>ℹ️ Account Info</div>
-      <div style={{fontSize:12,color:C.sub,lineHeight:2}}>
-        <div>Email: <b>{user?.email}</b></div>
-        <div>Role: <b>{user?.role?.toUpperCase()}</b></div>
-        <div>Plan: <b>{user?.plan?.toUpperCase()||"STARTER"}</b></div>
-        <div>Admin: <b>{isAdmin?"Yes ✅":"No"}</b></div>
-      </div>
-    </div>
+    {activeTab==="profile"&&(<div style={S.card}><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:14}}>👤 Profile</div><div style={S.col2}><div style={S.fg}><label style={S.label}>Full Name</label><input style={S.input} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/></div><div style={S.fg}><label style={S.label}>Firm Name</label><input style={S.input} value={f.firm_name} onChange={e=>setF(p=>({...p,firm_name:e.target.value}))}/></div></div><div style={S.col2}><div style={S.fg}><label style={S.label}>Email (cannot change)</label><input style={{...S.input,opacity:0.6}} value={user?.email||""} disabled/></div><div style={S.fg}><label style={S.label}>Mobile</label><input style={S.input} value={f.phone} onChange={e=>setF(p=>({...p,phone:e.target.value.replace(/\D/g,"").slice(0,10)}))}/></div></div><div style={{display:"flex",gap:8}}><button onClick={saveProfile} disabled={saving} style={S.btn}>{saving?"Saving…":"Save Profile"}</button><button onClick={onLogout} style={{...S.btnR,marginLeft:"auto"}}>Logout</button></div></div>)}
+    {activeTab==="password"&&(<div style={S.card}><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:14}}>🔐 Change Password</div><div style={S.fg}><label style={S.label}>Current Password</label><input type="password" style={S.input} value={cp.current} onChange={e=>setCp(p=>({...p,current:e.target.value}))}/></div><div style={S.col2}><div style={S.fg}><label style={S.label}>New Password</label><input type="password" style={S.input} value={cp.new_pass} onChange={e=>setCp(p=>({...p,new_pass:e.target.value}))}/></div><div style={S.fg}><label style={S.label}>Confirm</label><input type="password" style={S.input} value={cp.confirm} onChange={e=>setCp(p=>({...p,confirm:e.target.value}))}/></div></div><button onClick={changePass} disabled={saving} style={S.btn}>Change Password</button></div>)}
+    {activeTab==="language"&&(<div style={S.card}><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:6}}>🌐 AI Language</div><div style={{fontSize:12,color:C.muted,marginBottom:14}}>Language for AI appeal drafts, research memos and chat. Citations remain in English.</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>{[["english","🇬🇧","English","Formal English"],["hindi","🇮🇳","Hindi","Hindi in Devanagari"],["hinglish","🔀","Hinglish","Hindi + English mix"]].map(([val,flag,name,desc])=>(<div key={val} onClick={()=>saveLang(val)} style={{padding:14,borderRadius:8,cursor:"pointer",textAlign:"center",border:`2px solid ${lang===val?"#0B6623":C.border}`,background:lang===val?"#f0fdf4":C.card}}><div style={{fontSize:28,marginBottom:4}}>{flag}</div><div style={{fontWeight:700,fontSize:12,color:lang===val?"#0B6623":C.text}}>{name}</div><div style={{fontSize:10,color:C.muted}}>{desc}</div>{lang===val&&<div style={{fontSize:10,color:"#0B6623",marginTop:4,fontWeight:700}}>✅ Active</div>}</div>))}</div></div>)}
+    {activeTab==="display"&&(<div style={S.card}><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:6}}>🎨 Display Theme</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>{[["light","☀️","Light","#f5f6fa","#1a2b4e"],["dark","🌙","Dark","#0d1117","#e6edf3"],["green","🌿","Green","#f0fdf4","#14532d"]].map(([val,icon,name,bg,tx])=>(<div key={val} onClick={()=>onThemeChange(val)} style={{padding:14,borderRadius:8,cursor:"pointer",border:`2px solid ${theme===val?"#0B6623":C.border}`,background:theme===val?"#f0fdf4":C.card}}><div style={{width:"100%",height:40,borderRadius:6,background:bg,marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,fontWeight:700,color:tx}}>Preview</span></div><div style={{fontWeight:700,fontSize:12,color:theme===val?"#0B6623":C.text,textAlign:"center"}}>{icon} {name}</div>{theme===val&&<div style={{fontSize:10,color:"#0B6623",textAlign:"center",marginTop:4,fontWeight:700}}>✅ Active</div>}</div>))}</div></div>)}
+    {activeTab==="account"&&(<div><div style={S.card}><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:10}}>ℹ️ Account Info</div>{[["Email",user?.email],["Role",user?.role?.toUpperCase()],["Plan",(user?.plan||"starter").toUpperCase()],["Admin",isAdmin?"Yes ✅":"No"]].map(([l,v])=>(<div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}><span style={{color:C.muted}}>{l}</span><span style={{fontWeight:700,color:C.text}}>{v}</span></div>))}</div>{!isAdmin&&(<div style={S.card}><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:8}}>👑 Claim Admin</div><div style={{display:"flex",gap:8}}><input type="password" style={{...S.input,flex:1}} value={adminKey} onChange={e=>setAdminKey(e.target.value)} placeholder="ADMIN_SETUP_KEY"/><button onClick={claimAdmin} style={S.btn}>Claim</button></div></div>)}<div style={S.card}><button onClick={onLogout} style={{...S.btnR,width:"100%",padding:12}}>🚪 Logout</button></div></div>)}
   </div>);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ADMIN PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 function AdminPanel({token,toast}){
+  const C=getC();const S=getS();
   const[stats,setStats]=useState(null);const[loading,setLoading]=useState(true);
   useEffect(()=>{api("/admin/stats","GET",null,token).then(d=>{setStats(d);setLoading(false);}).catch(()=>setLoading(false));},[token]);
-  const suspend=async(id,val)=>{try{await api(`/admin/users/${id}/suspend`,"POST",{suspended:val},token);toast(`✅ User ${val?"suspended":"unsuspended"}`,"success");api("/admin/stats","GET",null,token).then(d=>setStats(d)).catch(()=>{});}catch(e){toast(e.message,"error");}};
+  const suspend=async(id,val)=>{
+    try{await api(`/admin/users/${id}/suspend`,"POST",{suspended:val},token);
+      toast(`✅ User ${val?"suspended":"unsuspended"}`,"success");
+      api("/admin/stats","GET",null,token).then(d=>setStats(d)).catch(()=>{});
+    }catch(e){toast(e.message,"error");}
+  };
   if(loading)return<Spinner/>;
   const s=stats?.stats||{};
   return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10,marginBottom:16}}>
       {[["👥","Users",s.total_users],["👥","Clients",s.total_clients],["📋","Cases",s.total_cases],["⚖️","Appeals",s.total_appeals],["📚","Library Refs",s.total_legal_refs]].map(([icon,label,val])=>(
         <div key={label} style={{...S.kpi,borderTop:`3px solid ${C.green}`}}>
           <div style={{fontSize:20,marginBottom:4}}>{icon}</div>
-          <div style={{fontSize:18,fontWeight:800,color:C.navy}}>{val||0}</div>
+          <div style={{fontSize:20,fontWeight:800,color:C.navy}}>{val||0}</div>
           <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{label}</div>
         </div>
       ))}
     </div>
     <div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>Recent Users</div>
-      <table style={S.tbl}><thead><tr>{["Name","Email","Role","Plan","Last Active","Status",""].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-      <tbody>{(stats?.recent_users||[]).map(u=>(
-        <tr key={u.id}>
-          <td style={{...S.td,fontWeight:600}}>{u.name}</td>
-          <td style={{...S.td,fontSize:11}}>{u.email}</td>
-          <td style={S.td}>{badge(u.role?.toUpperCase()||"CA","blue")}</td>
-          <td style={S.td}>{badge(u.plan?.toUpperCase()||"STARTER","gray")}</td>
-          <td style={{...S.td,fontSize:11}}>{u.last_active_at?new Date(u.last_active_at).toLocaleDateString("en-IN"):"Never"}</td>
-          <td style={S.td}>{badge(u.is_suspended?"Suspended":"Active",u.is_suspended?"red":"green")}</td>
-          <td style={S.tdR}>
-            <button onClick={()=>suspend(u.id,!u.is_suspended)} style={{...u.is_suspended?S.btn:S.btnR,fontSize:10,padding:"3px 8px"}}>
-              {u.is_suspended?"Unsuspend":"Suspend"}
-            </button>
-          </td>
-        </tr>
-      ))}</tbody></table>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:10,color:C.text}}>Recent Users</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={S.tbl}><thead><tr>{["Name","Email","Role","Plan","Last Active","Status",""].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+        <tbody>{(stats?.recent_users||[]).map(u=>(
+          <tr key={u.id}>
+            <td style={{...S.td,fontWeight:600}}>{u.name}</td>
+            <td style={{...S.td,fontSize:11}}>{u.email}</td>
+            <td style={S.td}>{badge(u.role?.toUpperCase()||"CA","blue")}</td>
+            <td style={S.td}>{badge((u.plan||"starter").toUpperCase(),"gray")}</td>
+            <td style={{...S.td,fontSize:11}}>{u.last_active_at?new Date(u.last_active_at).toLocaleDateString("en-IN"):"Never"}</td>
+            <td style={S.td}>{badge(u.is_suspended?"Suspended":"Active",u.is_suspended?"red":"green")}</td>
+            <td style={S.tdR}>
+              <button onClick={()=>suspend(u.id,!u.is_suspended)}
+                style={{...u.is_suspended?S.btn:S.btnR,fontSize:10,padding:"3px 8px"}}>
+                {u.is_suspended?"Unsuspend":"Suspend"}
+              </button>
+            </td>
+          </tr>
+        ))}</tbody></table>
+      </div>
     </div>
   </div>);
 }
