@@ -1,14 +1,36 @@
 import{useState,useEffect,useCallback,useRef,useMemo}from"react";
 
 const API=process.env.REACT_APP_API||"https://gstat-ai-backend.onrender.com/api";
+// Robust API base — ensure /api suffix, no double slashes
+const getApiBase=()=>{
+  let base=process.env.REACT_APP_API||"https://gstat-ai-backend.onrender.com/api";
+  base=base.replace(/\/+$/,""); // remove trailing slashes
+  if(!base.endsWith("/api"))base=base+"/api";
+  return base;
+};
+const BASE=getApiBase();
+
 const api=async(path,method="GET",body=null,token=null)=>{
   const headers={"Content-Type":"application/json"};
   if(token)headers["Authorization"]=`Bearer ${token}`;
-  const res=await fetch(`${API}${path}`,{method,headers,body:body?JSON.stringify(body):undefined});
-  const d=await res.json();
+  const url=`${BASE}${path.startsWith("/")?path:"/"+path}`;
+  const res=await fetch(url,{method,headers,body:body?JSON.stringify(body):undefined});
+  let d;
+  try{d=await res.json();}catch(e){throw new Error(`Server error (${res.status}). Check backend URL.`);}
   if(!d.success)throw new Error(d.message||"Request failed");
   return d;
 };
+
+// Robust FormData upload
+const apiUpload=async(path,formData,token)=>{
+  const url=`${BASE}${path.startsWith("/")?path:"/"+path}`;
+  const res=await fetch(url,{method:"POST",headers:{Authorization:`Bearer ${token}`},body:formData});
+  let d;
+  try{d=await res.json();}catch(e){throw new Error(`Server error (${res.status}). Check backend URL.`);}
+  if(!d.success)throw new Error(d.message||"Upload failed");
+  return d;
+};
+
 
 // ── Design tokens — support light/dark/green themes ──────────────────────────
 const THEMES={
@@ -75,6 +97,33 @@ function genCaptcha(){
 }
 
 // ── AuthScreen ────────────────────────────────────────────────────────────────
+// ── AUTH COMPONENTS — module level (NEVER inside a function — prevents focus loss) ──
+const AuthInp=({label,type="text",placeholder,value,onChange,onEnter,maxLength,autoFocus,hint,C,inp})=>(
+  <div style={{marginBottom:12}}>
+    {label&&<div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:5}}>{label}</div>}
+    <input type={type} placeholder={placeholder} value={value} autoFocus={autoFocus}
+      onChange={e=>onChange(e.target.value)} maxLength={maxLength}
+      onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()}
+      style={inp}/>
+    {hint&&<div style={{fontSize:11,color:C.muted,marginTop:3}}>{hint}</div>}
+  </div>
+);
+const AuthBtn=({onClick,children,variant="green",loading,warming,C,border})=>(
+  <button onClick={onClick} disabled={loading||warming}
+    style={{width:"100%",padding:13,
+      background:variant==="green"?"#0B6623":variant==="navy"?"#1a2b4e":"transparent",
+      color:variant==="outline"?"#1a2b4e":"#fff",
+      border:variant==="outline"?`1.5px solid ${border||"#e2e8f0"}`:"none",
+      borderRadius:7,fontSize:13,fontWeight:700,
+      cursor:loading||warming?"not-allowed":"pointer",
+      opacity:loading||warming?0.7:1,fontFamily:"inherit"}}>
+    {loading?"Please wait…":warming?"Connecting…":children}
+  </button>
+);
+const AuthErrBox=({err})=>err?<div style={{background:"#fff1f0",border:"1px solid #feb2b2",color:"#c53030",padding:"10px 14px",borderRadius:7,fontSize:13,marginBottom:14,lineHeight:1.5}}>⚠ {err}</div>:null;
+const AuthSuccBox=({success})=>success?<div style={{background:"#f0fdf4",border:"1px solid #86efac",color:"#166534",padding:"10px 14px",borderRadius:7,fontSize:13,marginBottom:14}}>✅ {success}</div>:null;
+
+
 function AuthScreen({onAuth}){
   // ── States ──
   const[tab,setTab]=useState("login");
@@ -225,27 +274,14 @@ function AuthScreen({onAuth}){
   const warming=serverStatus==="checking";
   const C={green:"#0B6623",navy:"#1a2b4e",border:"#e2e8f0",muted:"#94a3b8",text:"#1a2b4e",sub:"#4a5568"};
   const inp={width:"100%",padding:"11px 14px",background:"#fff",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:13,color:"#1a2b4e",outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
-  const Inp=({label,type="text",placeholder,value,onChange,onEnter,maxLength,autoFocus,hint})=>(
-    <div style={{marginBottom:12}}>
-      {label&&<div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:5}}>{label}</div>}
-      <input type={type} placeholder={placeholder} value={value} autoFocus={autoFocus}
-        onChange={e=>onChange(e.target.value)} maxLength={maxLength}
-        onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()}
-        style={inp}/>
-      {hint&&<div style={{fontSize:11,color:C.muted,marginTop:3}}>{hint}</div>}
-    </div>
-  );
-  const Btn=({onClick,children,variant="green"})=>(
-    <button onClick={onClick} disabled={loading||warming}
-      style={{width:"100%",padding:13,background:variant==="green"?C.green:variant==="navy"?C.navy:"transparent",
-        color:variant==="outline"?C.navy:"#fff",border:variant==="outline"?`1.5px solid ${C.border}`:"none",
-        borderRadius:7,fontSize:13,fontWeight:700,cursor:loading||warming?"not-allowed":"pointer",
-        opacity:loading||warming?0.7:1,fontFamily:"inherit"}}>
-      {loading?"Please wait…":warming?"Connecting…":children}
-    </button>
-  );
-  const ErrBox=()=>err?<div style={{background:"#fff1f0",border:"1px solid #feb2b2",color:"#c53030",padding:"10px 14px",borderRadius:7,fontSize:13,marginBottom:14,lineHeight:1.5}}>⚠ {err}</div>:null;
-  const SuccBox=()=>success?<div style={{background:"#f0fdf4",border:"1px solid #86efac",color:"#166534",padding:"10px 14px",borderRadius:7,fontSize:13,marginBottom:14}}>✅ {success}</div>:null;
+  // Aliases — use module-level components to prevent re-mounting on every keystroke
+  const Inp=({label,type,placeholder,value,onChange,onEnter,maxLength,autoFocus,hint})=><AuthInp label={label} type={type} placeholder={placeholder} value={value} onChange={onChange} onEnter={onEnter} maxLength={maxLength} autoFocus={autoFocus} hint={hint} C={C} inp={inp}/>;
+  const Btn=({onClick,children,variant})=><AuthBtn onClick={onClick} variant={variant} loading={loading} warming={warming} C={C} border={C.border}>{children}</AuthBtn>;
+  const ErrBox=()=><AuthErrBox err={err}/>;
+  const SuccBox=()=><AuthSuccBox success={success}/>;
+
+
+
 
   return(
     <div style={{minHeight:"100vh",background:"#f5f6fa",display:"flex",flexDirection:"column"}}>
@@ -482,14 +518,7 @@ export default function App(){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.85)",display:window.innerWidth<768?"none":"block"}}>{user.name} · {user.role?.toUpperCase()}</span>
-        <div style={{display:"flex",gap:4}}>
-          {[["☀️","light"],["🌙","dark"],["🌿","green"]].map(([icon,t])=>(
-            <button key={t} onClick={()=>changeTheme(t)} title={t+" theme"}
-              style={{background:theme===t?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.1)",border:"none",borderRadius:4,color:"#fff",fontSize:12,padding:"4px 6px",cursor:"pointer"}}>
-              {icon}
-            </button>
-          ))}
-        </div>
+
         <button onClick={logout} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:5,color:"#fff",fontSize:11,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>Logout</button>
         <button onClick={()=>setMobileOpen(p=>!p)} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:5,color:"#fff",fontSize:16,padding:"3px 10px",cursor:"pointer",display:window.innerWidth<768?"block":"none"}}>☰</button>
       </div>
@@ -1077,11 +1106,21 @@ function LegalLibrary({token,toast,isAdmin}){
       fd.append("court_name",f.court_name||"");fd.append("case_citation",f.case_citation||"");
       fd.append("case_date",f.case_date||"");fd.append("jurisdiction",f.jurisdiction||"");
       fd.append("tags",f.tags||"");fd.append("is_global",isAdmin&&f.is_global?"true":"false");
-      const res=await fetch(`${API}/legal-refs/upload`,{method:"POST",headers:{Authorization:`Bearer ${token}`},body:fd});
-      const d=await res.json();
-      if(d.success){toast(`✅ ${d.message}`,"success");setModal(null);load();}
-      else toast(d.message,"error");
-    }catch(e){toast(e.message,"error");}setSaving(false);
+      const d=await apiUpload("/legal-refs/upload",fd,token);
+      toast(`✅ Saved! ${d.extracted_length?d.extracted_length.toLocaleString()+" characters extracted":d.message||"Reference added"}`,"success");
+      setModal(null);setPdfFile(null);load();
+    }catch(e){
+      const msg=e.message||"";
+      if(msg.includes("Scanned")||msg.includes("scanned")||msg.includes("image PDF")||msg.includes("No readable")||msg.includes("not possible")){
+        toast("❌ Scanned PDF detected — text extraction failed. Please switch to Paste Text tab and paste the content manually.","error");
+      }else if(msg.includes("password")||msg.includes("Password")){
+        toast("❌ Password-protected PDF. Remove password first, then upload.","error");
+      }else{
+        toast("❌ Upload failed: "+msg,"error");
+      }
+    }
+    setSaving(false);
+
   };
 
   const isCase=t=>["hc_order","sc_order","gstat_order","aar"].includes(t);
@@ -1303,8 +1342,7 @@ function AppealWorkspace({token,toast,appeal,onBack,onRefresh}){
 
   const scanOrder=async()=>{if(!orderFile)return toast("Select a file","error");setScanning(true);
     try{const fd=new FormData();fd.append("file",orderFile);
-      const res=await fetch(`${API}/appeals/${appealId}/scan-order`,{method:"POST",headers:{Authorization:`Bearer ${token}`},body:fd});
-      const d=await res.json();
+      const d=await apiUpload(`/appeals/${appealId}/scan-order`,fd,token);
       if(d.success){setScanResult(d.summary);
         if(d.summary){setF(p=>({...p,order_ref_no:p.order_ref_no||d.summary.order_ref_no||"",order_date:p.order_date||d.summary.order_date||"",section_invoked:p.section_invoked||d.summary.section_invoked||"",demand_amount:p.demand_amount==="0"?String(d.summary.demand_amount||0):p.demand_amount,issuing_officer:p.issuing_officer||d.summary.issuing_officer||"",tax_period:p.tax_period||d.summary.tax_period||""}));
           if(d.summary.grounds_of_demand?.length&&grounds.every(g=>!g.text))setGrounds(d.summary.grounds_of_demand.map((g,i)=>({ground_no:i+1,heading:`Ground ${i+1}`,text:g})));
