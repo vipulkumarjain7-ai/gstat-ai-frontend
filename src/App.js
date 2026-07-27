@@ -139,12 +139,15 @@ const AuthSuccBox=({success})=>success?<div style={{background:"#f0fdf4",border:
 
   useEffect(()=>{fetch(`${API.replace("/api","")}/health`).catch(()=>{});},[]);
   useEffect(()=>{if(token)api("/admin/me","GET",null,token).then(d=>setIsAdmin(!!d.is_admin)).catch(()=>{});},[token]);
-  useEffect(()=>{
-    if(!token)return;
-    const ping=()=>api("/auth/heartbeat","POST",null,token).catch(()=>{});
-    ping();const id=setInterval(ping,5*60*1000);return()=>clearInterval(id);
-  ,[token]);
-  if(!user||!token)return<AuthScreen onAuth={onAuth}/>;
+  useEffect(() => {
+  if (!token) return;
+  const ping = () => api("/auth/heartbeat", "POST", null, token).catch(() => {});
+  ping();
+  const id = setInterval(ping, 5 * 60 * 1000);
+  return () => clearInterval(id);
+}, [token]);
+if (!user || !token) {
+  return <AuthScreen onAuth={onAuth} />;
 }
 
   const NAV_GROUPS=[
