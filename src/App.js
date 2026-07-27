@@ -144,7 +144,6 @@ const AuthSuccBox=({success})=>success?<div style={{background:"#f0fdf4",border:
     const ping=()=>api("/auth/heartbeat","POST",null,token).catch(()=>{});
     ping();const id=setInterval(ping,5*60*1000);return()=>clearInterval(id);
   },[token]);
-
   if(!user||!token)return<AuthScreen onAuth={onAuth}/>;
 
   const NAV_GROUPS=[
