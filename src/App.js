@@ -123,6 +123,351 @@ const AuthBtn=({onClick,children,variant="green",loading,warming,C,border})=>(
 const AuthErrBox=({err})=>err?<div style={{background:"#fff1f0",border:"1px solid #feb2b2",color:"#c53030",padding:"10px 14px",borderRadius:7,fontSize:13,marginBottom:14,lineHeight:1.5}}>⚠ {err}</div>:null;
 const AuthSuccBox=({success})=>success?<div style={{background:"#f0fdf4",border:"1px solid #86efac",color:"#166534",padding:"10px 14px",borderRadius:7,fontSize:13,marginBottom:14}}>✅ {success}</div>:null;
 
+
+function AuthScreen({onAuth}){
+  // ── States ──
+  const[tab,setTab]=useState("login");
+  // login states
+  const[email,setEmail]=useState("");
+  const[password,setPassword]=useState("");
+  const[loginMode,setLoginMode]=useState("form"); // form | otp2fa
+  const[loginOtpToken,setLoginOtpToken]=useState(null);
+  const[loginOtpSentTo,setLoginOtpSentTo]=useState("");
+  const[loginOtpCode,setLoginOtpCode]=useState("");
+  // captcha
+  const[captcha,setCaptcha]=useState(()=>genCaptcha());
+  const[captchaInput,setCaptchaInput]=useState("");
+  // register states
+  const[regName,setRegName]=useState("");
+  const[regFirm,setRegFirm]=useState("");
+  const[regEmail,setRegEmail]=useState("");
+  const[regPhone,setRegPhone]=useState("");
+  const[regPass,setRegPass]=useState("");
+  const[regRole,setRegRole]=useState("advocate");
+  // email verify states (after register)
+  const[verifyToken,setVerifyToken]=useState(null);
+  const[verifyEmail,setVerifyEmail]=useState("");
+  const[verifyCode,setVerifyCode]=useState("");
+  // phone OTP states
+  const[phone,setPhone]=useState("");
+  const[phoneStep,setPhoneStep]=useState("input");
+  const[phoneOtpToken,setPhoneOtpToken]=useState(null);
+  const[phoneOtpSentTo,setPhoneOtpSentTo]=useState("");
+  const[phoneOtpCode,setPhoneOtpCode]=useState("");
+  // forgot password states
+  const[forgotEmail,setForgotEmail]=useState("");
+  const[forgotStep,setForgotStep]=useState("email"); // email | otp | newpass
+  const[forgotResetToken,setForgotResetToken]=useState(null);
+  const[forgotSentTo,setForgotSentTo]=useState("");
+  const[forgotOtpCode,setForgotOtpCode]=useState("");
+  const[newPassword,setNewPassword]=useState("");
+  const[newPasswordConfirm,setNewPasswordConfirm]=useState("");
+  // ui states
+  const[loading,setLoading]=useState(false);
+  const[err,setErr]=useState("");
+  const[success,setSuccess]=useState("");
+  const[serverStatus,setServerStatus]=useState("checking");
+
+  useEffect(()=>{
+    const t=setTimeout(()=>setServerStatus("slow"),10000);
+    fetch(`${API.replace("/api","")}/health`)
+      .then(()=>{clearTimeout(t);setServerStatus("awake");})
+      .catch(()=>{clearTimeout(t);setServerStatus("awake");});
+    return()=>clearTimeout(t);
+  },[]);
+
+  const finish=d=>{
+    localStorage.setItem("gs_token",d.token);
+    localStorage.setItem("gs_user",JSON.stringify(d.user));
+    onAuth(d.user,d.token);
+  };
+  const sw=t=>{setTab(t);setErr("");setSuccess("");setLoginMode("form");setPhoneStep("input");setCaptcha(genCaptcha());setCaptchaInput("");};
+  const refreshCaptcha=()=>{setCaptcha(genCaptcha());setCaptchaInput("");};
+
+  // ── Login ──
+  const doLogin=async()=>{
+    if(!email||!password)return setErr("Email and password required");
+    if(captchaInput!==captcha.answer)return setErr(`Incorrect captcha. Hint: ${captcha.question}`);
+    setErr("");setLoading(true);
+    try{
+      const d=await api("/auth/login","POST",{email,password},null);
+      if(d.require_otp){setLoginOtpToken(d.otp_token);setLoginOtpSentTo(d.sent_to||"");setLoginMode("otp2fa");}
+      else finish(d);
+    }catch(e){setErr(e.message);refreshCaptcha();}
+    setLoading(false);
+  };
+
+  const doVerify2FA=async()=>{
+    if(!loginOtpCode||loginOtpCode.length<6)return setErr("Enter 6-digit OTP");
+    setErr("");setLoading(true);
+    try{const d=await api("/auth/verify-otp","POST",{otp_token:loginOtpToken,code:loginOtpCode},null);finish(d);}
+    catch(e){setErr(e.message);}setLoading(false);
+  };
+
+  // ── Register ──
+  const doRegister=async()=>{
+    if(!regName||!regEmail||!regPass||!regFirm||!regPhone)return setErr("All fields are mandatory");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail))return setErr("Enter a valid email address (e.g. name@gmail.com)");
+    if(regPhone.replace(/\D/g,"").length!==10)return setErr("Enter valid 10-digit mobile number");
+    if(regPass.length<8)return setErr("Password must be at least 8 characters");
+    setErr("");setSuccess("");setLoading(true);
+    try{
+      const d=await api("/auth/register","POST",{name:regName,email:regEmail,password:regPass,firm_name:regFirm,phone:regPhone.replace(/\D/g,""),role:regRole},null);
+      if(d.require_email_verify){
+        setVerifyToken(d.verify_token);setVerifyEmail(d.sent_to);
+        setTab("verify_email");setErr("");
+      }else{finish(d);}
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  const doVerifyEmail=async()=>{
+    if(!verifyCode||verifyCode.length<6)return setErr("Enter 6-digit OTP from your email");
+    setErr("");setLoading(true);
+    try{const d=await api("/auth/verify-email","POST",{verify_token:verifyToken,code:verifyCode},null);finish(d);}
+    catch(e){setErr(e.message);}setLoading(false);
+  };
+
+  // ── Phone OTP ──
+  const doSendPhoneOtp=async()=>{
+    const cleaned=phone.replace(/\D/g,"");
+    if(cleaned.length!==10)return setErr("Enter valid 10-digit mobile number");
+    setErr("");setLoading(true);
+    try{const d=await api("/auth/phone-otp-request","POST",{phone:cleaned},null);
+      setPhoneOtpToken(d.otp_token);setPhoneOtpSentTo(d.sent_to||"");setPhoneStep("otp");
+    }catch(e){setErr(e.message);}setLoading(false);
+  };
+  const doVerifyPhoneOtp=async()=>{
+    if(!phoneOtpCode||phoneOtpCode.length<6)return setErr("Enter 6-digit OTP");
+    setErr("");setLoading(true);
+    try{const d=await api("/auth/phone-otp-verify","POST",{otp_token:phoneOtpToken,code:phoneOtpCode},null);finish(d);}
+    catch(e){setErr(e.message);}setLoading(false);
+  };
+
+  // ── Forgot Password ──
+  const doForgotSend=async()=>{
+    if(!forgotEmail||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail))return setErr("Enter a valid email address");
+    setErr("");setLoading(true);
+    try{
+      const d=await api("/auth/forgot-password","POST",{email:forgotEmail},null);
+      if(d.reset_token){setForgotResetToken(d.reset_token);setForgotSentTo(d.sent_to||forgotEmail);setForgotStep("otp");}
+      else setErr(d.message||"If this email is registered, OTP has been sent.");
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+  const doForgotVerifyOtp=async()=>{
+    if(!forgotOtpCode||forgotOtpCode.length<6)return setErr("Enter 6-digit OTP");
+    setErr("");setForgotStep("newpass");
+  };
+  const doResetPassword=async()=>{
+    if(!newPassword||newPassword.length<8)return setErr("Password must be at least 8 characters");
+    if(newPassword!==newPasswordConfirm)return setErr("Passwords do not match");
+    setErr("");setLoading(true);
+    try{
+      const d=await api("/auth/reset-password","POST",{reset_token:forgotResetToken,code:forgotOtpCode,new_password:newPassword},null);
+      setSuccess("✅ Password reset successfully! Please login with your new password.");
+      setTab("login");setForgotStep("email");setForgotEmail("");setForgotOtpCode("");setNewPassword("");setNewPasswordConfirm("");
+    }catch(e){setErr(e.message);}
+    setLoading(false);
+  };
+
+  const warming=serverStatus==="checking";
+  const C={green:"#0B6623",navy:"#1a2b4e",border:"#e2e8f0",muted:"#94a3b8",text:"#1a2b4e",sub:"#4a5568"};
+  const inp={width:"100%",padding:"11px 14px",background:"#fff",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:13,color:"#1a2b4e",outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
+
+
+
+
+
+  return(
+    <div style={{minHeight:"100vh",background:"#f5f6fa",display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{background:C.green,padding:"0 24px",height:62,display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <div style={{width:42,height:42,background:"#fff",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:20,color:C.green}}>G</div>
+          <div><div style={{color:"#fff",fontWeight:800,fontSize:17}}>GSTAT AI</div><div style={{color:"rgba(255,255,255,0.75)",fontSize:10}}>AI-Powered GST Litigation Platform</div></div>
+        </div>
+        <div>
+          {serverStatus==="slow"&&<span style={{fontSize:10,color:"#fbbf24"}}>⏳ Server waking up... (~30-60s on free plan)</span>}
+          {serverStatus==="awake"&&<span style={{fontSize:10,color:"#86efac"}}>✅ Server ready</span>}
+        </div>
+      </div>
+      <div style={{background:C.navy,padding:"8px 24px",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>🏠 Home</span>
+        <span style={{color:"rgba(255,255,255,0.3)"}}>›</span>
+        <span style={{color:"#fff",fontSize:11,fontWeight:600}}>
+          {tab==="forgot"?"Forgot Password":tab==="verify_email"?"Verify Email":"Login / Register"}
+        </span>
+      </div>
+
+      <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"32px 16px"}}>
+        <div style={{width:"100%",maxWidth:460,background:"#fff",borderRadius:10,boxShadow:"0 4px 24px rgba(0,0,0,0.1)",overflow:"hidden"}}>
+          <div style={{background:C.navy,padding:"18px 24px"}}>
+            <div style={{color:"#fff",fontWeight:700,fontSize:16}}>
+              {tab==="verify_email"?"📧 Verify Your Email":tab==="forgot"?"🔑 Reset Password":"🔐 Login to GSTAT AI"}
+            </div>
+            <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,marginTop:3}}>GST Litigation & Appeal Drafting Platform</div>
+          </div>
+
+          <div style={{padding:24}}>
+            {/* Tab bar */}
+            {tab!=="verify_email"&&tab!=="forgot"&&(
+              <div style={{display:"flex",background:"#f0f2f5",borderRadius:7,padding:4,marginBottom:20}}>
+                {[["login","📧 Email"],["phone","📱 Mobile OTP"],["register","✏️ Register"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>sw(k)} style={{flex:1,padding:"8px 4px",border:"none",borderRadius:5,cursor:"pointer",fontSize:11,fontWeight:tab===k?700:400,fontFamily:"inherit",background:tab===k?"#fff":"transparent",color:tab===k?C.navy:C.muted,boxShadow:tab===k?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>{l}</button>
+                ))}
+              </div>
+            )}
+
+            <AuthErrBox err={err}/><AuthSuccBox success={success}/>
+
+            {/* ── EMAIL VERIFY ── */}
+            {tab==="verify_email"&&(
+              <div>
+                <div style={{background:"#f0fdf4",border:"2px solid #86efac",borderRadius:8,padding:18,marginBottom:16,textAlign:"center"}}>
+                  <div style={{fontSize:36,marginBottom:8}}>📧</div>
+                  <div style={{fontWeight:700,color:"#166534",fontSize:15,marginBottom:4}}>OTP Sent!</div>
+                  <div style={{fontSize:12,color:"#166534",marginBottom:6}}>We sent a 6-digit OTP to:</div>
+                  <div style={{fontWeight:800,color:C.green,fontSize:14,fontFamily:"monospace",letterSpacing:1}}>{verifyEmail}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:8}}>📥 Check your inbox and spam folder · ⏰ Valid for 30 minutes</div>
+                </div>
+                <AuthInp C={C} inp={inp} label="Enter 6-Digit OTP *" placeholder="0  0  0  0  0  0" value={verifyCode}
+                  onChange={v=>setVerifyCode(v.replace(/\D/g,"").slice(0,6))}
+                  onEnter={doVerifyEmail} maxLength={6} autoFocus
+                  hint="If OTP not received, check spam folder or contact admin to verify SMTP settings"/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doVerifyEmail}>✅ Verify & Activate Account →</AuthBtn>
+                <button onClick={()=>{sw("register");setVerifyToken(null);}} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",marginTop:10,textDecoration:"underline",display:"block"}}>← Back to Register</button>
+              </div>
+            )}
+
+            {/* ── EMAIL LOGIN ── */}
+            {tab==="login"&&loginMode==="form"&&(
+              <div>
+                <AuthInp C={C} inp={inp} label="Email ID *" placeholder="yourname@email.com" value={email} onChange={setEmail}/>
+                <AuthInp C={C} inp={inp} label="Password *" type="password" placeholder="••••••••" value={password} onChange={setPassword} onEnter={doLogin}/>
+                {/* Math CAPTCHA */}
+                <div style={{background:"#f8fafc",border:`1.5px solid ${C.border}`,borderRadius:7,padding:"12px 14px",marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.sub,marginBottom:8}}>🔒 Security Check (Anti-bot)</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{background:C.navy,color:"#fff",padding:"8px 16px",borderRadius:6,fontSize:16,fontWeight:700,fontFamily:"monospace",letterSpacing:2,minWidth:100,textAlign:"center"}}>{captcha.question}</div>
+                    <input value={captchaInput} onChange={e=>setCaptchaInput(e.target.value.trim())}
+                      placeholder="Answer" maxLength={4}
+                      style={{...inp,width:80,textAlign:"center",fontSize:18,fontWeight:700}}
+                      onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+                    <button onClick={refreshCaptcha} title="New question" style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:C.muted}}>🔄</button>
+                  </div>
+                </div>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doLogin}>Login →</AuthBtn>
+                <button onClick={()=>{setTab("forgot");setForgotEmail(email);setErr("");setSuccess("");}} style={{background:"none",border:"none",color:C.green,fontSize:12,cursor:"pointer",marginTop:10,display:"block",textDecoration:"underline"}}>🔑 Forgot Password?</button>
+              </div>
+            )}
+            {tab==="login"&&loginMode==="otp2fa"&&(
+              <div>
+                <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:7,padding:"10px 14px",fontSize:12,color:"#166534",marginBottom:14}}>✅ OTP sent to {loginOtpSentTo}</div>
+                <AuthInp C={C} inp={inp} label="Enter OTP *" placeholder="000000" value={loginOtpCode} onChange={setLoginOtpCode} onEnter={doVerify2FA} maxLength={6} autoFocus/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doVerify2FA}>Verify OTP →</AuthBtn>
+                <button onClick={()=>{setLoginMode("form");setErr("");}} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Back</button>
+              </div>
+            )}
+
+            {/* ── PHONE OTP ── */}
+            {tab==="phone"&&phoneStep==="input"&&(
+              <div>
+                <AuthInp C={C} inp={inp} label="Registered Mobile Number *" placeholder="10-digit mobile number" value={phone}
+                  onChange={v=>setPhone(v.replace(/\D/g,"").slice(0,10))} onEnter={doSendPhoneOtp} maxLength={10}
+                  hint="OTP will be sent to your registered email address"/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doSendPhoneOtp}>Send OTP →</AuthBtn>
+              </div>
+            )}
+            {tab==="phone"&&phoneStep==="otp"&&(
+              <div>
+                <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:7,padding:"10px 14px",fontSize:12,color:"#166534",marginBottom:14}}>✅ OTP sent to {phoneOtpSentTo}</div>
+                <AuthInp C={C} inp={inp} label="Enter OTP *" placeholder="000000" value={phoneOtpCode} onChange={setPhoneOtpCode} onEnter={doVerifyPhoneOtp} maxLength={6} autoFocus/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doVerifyPhoneOtp}>Verify & Login →</AuthBtn>
+                <button onClick={()=>{setPhoneStep("input");setErr("");}} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",marginTop:8,textDecoration:"underline"}}>← Change number</button>
+              </div>
+            )}
+
+            {/* ── REGISTER ── */}
+            {tab==="register"&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <AuthInp C={C} inp={inp} label="Full Name *" placeholder="Adv. Rajesh Sharma" value={regName} onChange={setRegName}/>
+                  <AuthInp C={C} inp={inp} label="Firm Name *" placeholder="Sharma & Associates" value={regFirm} onChange={setRegFirm}/>
+                </div>
+                <AuthInp C={C} inp={inp} label="Email ID * (OTP will be sent here to verify your account)" type="email" placeholder="yourname@gmail.com" value={regEmail} onChange={setRegEmail}/>
+                <AuthInp C={C} inp={inp} label="Mobile Number *" placeholder="10-digit mobile number" value={regPhone} onChange={v=>setRegPhone(v.replace(/\D/g,"").slice(0,10))} maxLength={10}/>
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:5}}>Role *</div>
+                  <select value={regRole} onChange={e=>setRegRole(e.target.value)} style={inp}>
+                    {[["advocate","Advocate / Lawyer"],["ca","Chartered Accountant"],["staff","Staff / Junior"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <AuthInp C={C} inp={inp} label="Password * (minimum 8 characters)" type="password" placeholder="••••••••" value={regPass} onChange={setRegPass} onEnter={doRegister}/>
+                <div style={{background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:7,padding:"10px 14px",fontSize:11,color:"#92400e",marginBottom:14}}>
+                  ⚠️ OTP will be sent to your email for verification. Make sure your email address is correct and SMTP is configured on the server.
+                </div>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doRegister}>Create Account & Send Verification OTP →</AuthBtn>
+              </div>
+            )}
+
+            {/* ── FORGOT PASSWORD ── */}
+            {tab==="forgot"&&forgotStep==="email"&&(
+              <div>
+                <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:7,padding:"12px 14px",fontSize:12,color:"#1d4ed8",marginBottom:16}}>
+                  🔑 Enter your registered email address. We will send a 6-digit OTP to reset your password.
+                </div>
+                <AuthInp C={C} inp={inp} label="Registered Email ID *" type="email" placeholder="yourname@email.com" value={forgotEmail} onChange={setForgotEmail} onEnter={doForgotSend} autoFocus/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doForgotSend}>Send Reset OTP →</AuthBtn>
+                <button onClick={()=>{sw("login");}} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",marginTop:10,textDecoration:"underline",display:"block"}}>← Back to Login</button>
+              </div>
+            )}
+            {tab==="forgot"&&forgotStep==="otp"&&(
+              <div>
+                <div style={{background:"#f0fdf4",border:"2px solid #86efac",borderRadius:8,padding:16,marginBottom:16,textAlign:"center"}}>
+                  <div style={{fontSize:28,marginBottom:6}}>📧</div>
+                  <div style={{fontWeight:700,color:"#166534",marginBottom:4}}>OTP Sent!</div>
+                  <div style={{fontSize:12,color:"#166534"}}>Password reset OTP sent to:</div>
+                  <div style={{fontWeight:800,color:C.green,fontSize:13,fontFamily:"monospace",marginTop:4}}>{forgotSentTo}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:6}}>⏰ Valid for 15 minutes · Check spam folder too</div>
+                </div>
+                <AuthInp C={C} inp={inp} label="Enter 6-Digit OTP *" placeholder="0  0  0  0  0  0" value={forgotOtpCode} onChange={v=>setForgotOtpCode(v.replace(/\D/g,"").slice(0,6))} onEnter={doForgotVerifyOtp} maxLength={6} autoFocus/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doForgotVerifyOtp}>Verify OTP →</AuthBtn>
+                <button onClick={()=>setForgotStep("email")} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",marginTop:10,textDecoration:"underline",display:"block"}}>← Resend OTP</button>
+              </div>
+            )}
+            {tab==="forgot"&&forgotStep==="newpass"&&(
+              <div>
+                <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:7,padding:"10px 14px",fontSize:12,color:"#166534",marginBottom:14}}>✅ OTP verified! Set your new password below.</div>
+                <AuthInp C={C} inp={inp} label="New Password * (minimum 8 characters)" type="password" placeholder="••••••••" value={newPassword} onChange={setNewPassword}/>
+                <AuthInp C={C} inp={inp} label="Confirm New Password *" type="password" placeholder="••••••••" value={newPasswordConfirm} onChange={setNewPasswordConfirm} onEnter={doResetPassword}/>
+                <AuthBtn loading={loading} warming={warming} C={C} border={C.border} onClick={doResetPassword}>✅ Reset Password →</AuthBtn>
+              </div>
+            )}
+
+            {warming&&tab!=="verify_email"&&(
+              <div style={{fontSize:11,color:C.muted,textAlign:"center",marginTop:12,padding:"8px",background:"#f8fafc",borderRadius:6}}>
+                ⏳ Connecting... This may take 30-60 seconds on free plan (cold start)
+              </div>
+            )}
+          </div>
+          <div style={{background:"#f8fafc",padding:"10px 24px",borderTop:"1px solid #e2e8f0",fontSize:10,color:C.muted,textAlign:"center"}}>
+            GSTAT AI · Enterprise GST Litigation Platform · Data encrypted at rest
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Main App Shell ────────────────────────────────────────────────────────────
+export default function App(){
+  const[user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("gs_user"));}catch{return null;}});
+  const[token,setToken]=useState(()=>localStorage.getItem("gs_token")||"");
+  const[view,setView]=useState("dashboard");
+  const[toast,setToast]=useState(null);
+  const[isAdmin,setIsAdmin]=useState(false);
   const[mobileOpen,setMobileOpen]=useState(false);
   const[activeNav,setActiveNav]=useState(null);
   const[theme,setTheme]=useState(()=>localStorage.getItem("gs_theme")||"light");
@@ -139,16 +484,13 @@ const AuthSuccBox=({success})=>success?<div style={{background:"#f0fdf4",border:
 
   useEffect(()=>{fetch(`${API.replace("/api","")}/health`).catch(()=>{});},[]);
   useEffect(()=>{if(token)api("/admin/me","GET",null,token).then(d=>setIsAdmin(!!d.is_admin)).catch(()=>{});},[token]);
-  useEffect(() => {
-  if (!token) return;
-  const ping = () => api("/auth/heartbeat", "POST", null, token).catch(() => {});
-  ping();
-  const id = setInterval(ping, 5 * 60 * 1000);
-  return () => clearInterval(id);
-}, [token]);
-if (!user || !token) {
-  return <AuthScreen onAuth={onAuth} />;
-}
+  useEffect(()=>{
+    if(!token)return;
+    const ping=()=>api("/auth/heartbeat","POST",null,token).catch(()=>{});
+    ping();const id=setInterval(ping,5*60*1000);return()=>clearInterval(id);
+  },[token]);
+
+  if(!user||!token)return<AuthScreen onAuth={onAuth}/>;
 
   const NAV_GROUPS=[
     {group:"MAIN",icon:"🏠",items:[{key:"dashboard",icon:"🏠",label:"Dashboard"}]},
@@ -789,6 +1131,9 @@ function LegalLibrary({token,toast,isAdmin}){
   const[search,setSearch]=useState("");const[filterType,setFilterType]=useState("");
   const[page,setPage]=useState(1);const[total,setTotal]=useState(0);
   const[modal,setModal]=useState(null);const[viewing,setViewing]=useState(null);
+  const[editRef,setEditRef]=useState(null);
+  const[viewFont,setViewFont]=useState("Georgia,'Times New Roman',serif");
+  const[viewSize,setViewSize]=useState(13);
   const[tab,setTab]=useState("paste"); // paste | pdf
   const[f,setF]=useState({ref_type:"act_section",act_name:"",reference_no:"",title:"",full_text:"",court_name:"",case_citation:"",case_date:"",jurisdiction:"",tags:"",is_global:true});
   const[pdfFile,setPdfFile]=useState(null);const[saving,setSaving]=useState(false);
